@@ -23,19 +23,36 @@ class ItemSystem {
         const rarity = this.getRarity();
         const baseTypes = ["Blade", "Longsword", "War Axe", "Hammer", "Mace", "Dagger", "Spear", "Halberd", "Bow", "Crossbow"];
         const baseType = baseTypes[rng(0, baseTypes.length-1)];
+        const weaponClassMap = {
+            Axe: ["War Axe"],
+            Sword: ["Blade", "Longsword"],
+            Hammer: ["Hammer", "Mace"],
+            Dagger: ["Dagger"],
+            Spear: ["Spear", "Halberd"],
+            Bow: ["Bow", "Crossbow"]
+        };
+        let weaponClass = 'Weapon';
+        Object.keys(weaponClassMap).forEach(cls => {
+            if (weaponClassMap[cls].includes(baseType)) weaponClass = cls;
+        });
         const baseMin = Math.floor((lvl * 3 + rng(2, 5)) * rarity.mult);
         const baseMax = baseMin + Math.floor((lvl * 2 + rng(3, 6)) * rarity.mult);
 
-        // map visual rarity color -> logical rarity string for name generator
         let rarityKey = 'common';
         if (rarity.color === 'rarity-uncommon') rarityKey = 'uncommon';
         else if (rarity.color === 'rarity-rare') rarityKey = 'rare';
         else if (rarity.color === 'rarity-epic') rarityKey = 'epic';
         else if (rarity.color === 'rarity-legendary') rarityKey = 'legendary';
 
-        const displayName = (typeof generateItemName === 'function')
+        let displayName = (typeof generateItemName === 'function')
             ? generateItemName({ category: 'weapon', rarity: rarityKey, baseType })
             : `${rarity.name} ${baseType}`;
+
+        if (rarityKey === 'legendary') {
+            const escaped = baseType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(`\\b${escaped}\\b`, 'i');
+            displayName = displayName.replace(re, '').replace(/\s+/g, ' ').trim();
+        }
 
         return {
             id: Date.now()+Math.random(),
@@ -43,6 +60,7 @@ class ItemSystem {
             category: 'weapon',
             rarityKey,
             baseType,
+            weaponClass,
             name: displayName,
             min: baseMin,
             max: baseMax,
@@ -134,7 +152,7 @@ const game = {
     newGameView() { $('screen-start').classList.add('hidden'); $('screen-creation').classList.remove('hidden'); },
     createCharacter() {
         this.player = new Player($('inp-name').value || "Gladiator", $('inp-class').value, this.selectedAvatar);
-        this.player.equip({ id:1, type:'weapon', name:'Rusty Sword', min:3, max:6, stat:'Damage', rarity:'rarity-common', price:5 });
+        this.player.equip({ id:1, type:'weapon', name:'Rusty Sword', min:3, max:6, stat:'Damage', rarity:'rarity-common', price:5, weaponClass:'Sword', baseType:'Sword' });
         this.generateShopStock(); this.showHub(); this.saveGame();
     },
     generateShopStock() {
@@ -259,7 +277,9 @@ const game = {
             if(item) {
                 if(item.type === 'weapon') {
                     const dmgText = (typeof item.min === 'number' && typeof item.max === 'number') ? ` <span style="color:#888; font-size:0.8rem;">(${item.min}-${item.max})</span>` : '';
-                    display = `<span class="${item.rarity}">${item.name}</span>${dmgText}`;
+                    const cls = (item.weaponClass || '').toLowerCase();
+                    const classTag = cls ? ` <span style="color:#888; font-size:0.75rem;">[${cls}]</span>` : '';
+                    display = `<span class="${item.rarity}">${item.name}${classTag}</span>${dmgText}`;
                 } else {
                     const valText = (typeof item.val === 'number') ? ` <span style="color:#888; font-size:0.8rem;">(+${item.val})</span>` : '';
                     display = `<span class="${item.rarity}">${item.name}</span>${valText}`;
@@ -322,13 +342,15 @@ const game = {
                 const equipped = this.player.gear[slot];
                 if(!equipped) return;
                 const isWeapon = equipped.type === 'weapon';
+                const cls = (equipped.weaponClass || '').toLowerCase();
+                const nameTag = isWeapon && cls ? ` <span style="color:#666; font-size:0.75rem;">[${cls}]</span>` : '';
                 const statDisplay = isWeapon
                     ? `Dmg: ${equipped.min}-${equipped.max}`
                     : `Armor: ${equipped.val}`;
                 const slotTag = !isWeapon ? ` <span style="color:#666; font-size:0.7rem">[${slot}]</span>` : '';
                 const row = document.createElement('div');
                 row.className = 'item-row';
-                row.innerHTML = `<div class="${equipped.rarity}">${title}: ${equipped.name}${slotTag}</div><div style="font-size:0.8rem;">${equipped.rarity.replace('rarity-','')}</div><div style="font-size:0.8rem; color:#ccc;">${statDisplay}</div><div class="text-gold">-</div><button class="btn" style="padding:5px 10px; font-size:0.8rem;">Unequip</button>`;
+                row.innerHTML = `<div class="${equipped.rarity}">${title}: ${equipped.name}${nameTag}${slotTag}</div><div style="font-size:0.8rem;">${equipped.rarity.replace('rarity-','')}</div><div style="font-size:0.8rem; color:#ccc;">${statDisplay}</div><div class="text-gold">-</div><button class="btn" style="padding:5px 10px; font-size:0.8rem;">Unequip</button>`;
                 row.querySelector('button').onclick = () => {
                     this.doUnequip(slot);
                     this.renderList(this.player.inventory, mode);
@@ -361,12 +383,14 @@ const game = {
                 statDisplay = `Armor: ${item.val}`;
             }
 
+            const cls = item.type === 'weapon' ? (item.weaponClass || '').toLowerCase() : '';
+            const classTag = item.type === 'weapon' && cls ? ` <span style="color:#666; font-size:0.7rem">[${cls}]</span>` : '';
             const slotTag = item.type === 'armor' ? ` <span style="color:#666; font-size:0.7rem">[${item.slot}]</span>` : '';
             const btnTxt = mode === 'shop' ? `Buy` : 'Equip';
             const priceTxt = mode === 'shop' ? `${item.price}` : '-';
             let btnState = (mode === 'shop' && this.player.gold < item.price) ? "disabled" : "";
 
-            div.innerHTML = `<div class="${item.rarity}">${item.name}${slotTag}</div><div style="font-size:0.8rem;">${item.rarity.replace('rarity-', '')}</div><div style="font-size:0.8rem; color:#ccc;">${statDisplay} ${diffHtml}</div><div class="text-gold">${priceTxt}</div><button class="btn" style="padding:5px 10px; font-size:0.8rem;" ${btnState}>${btnTxt}</button>`;
+            div.innerHTML = `<div class="${item.rarity}">${item.name}${classTag}${slotTag}</div><div style="font-size:0.8rem;">${item.rarity.replace('rarity-', '')}</div><div style="font-size:0.8rem; color:#ccc;">${statDisplay} ${diffHtml}</div><div class="text-gold">${priceTxt}</div><button class="btn" style="padding:5px 10px; font-size:0.8rem;" ${btnState}>${btnTxt}</button>`;
             
             div.querySelector('button').onclick = () => {
                 if(mode === 'shop') {
@@ -492,6 +516,7 @@ const combat = {
     hp: 0, maxHp: 0, armor: 0, maxArmor: 0, enemy: null, turn: 'player', actionLock: false,
     playerDots: [], // active DOT effects on player
     dotResist: {},  // per-combat resistance per DOT id (0-1)
+    log: [],        // recent combat log lines
     init() {
         const p = game.player;
         this.maxHp = p.getMaxHp(); this.hp = this.maxHp;
@@ -501,6 +526,8 @@ const combat = {
         const s = p.level;
         this.enemy = { name: ["Orc", "Goblin", "Bandit", "Skeleton", "Troll"][rng(0,4)], lvl: s, maxHp: 100+(s*20), hp: 100+(s*20), str: 6+(s*2), atk: 5+s, def: 2+s, vit: 5+s, mag: 0 };
         $('screen-hub').classList.add('hidden'); $('screen-combat').classList.remove('hidden'); $('enemy-think').style.display='none';
+        this.log = [];
+        this.logMessage(`${this.enemy.name} enters the arena!`);
         this.updateUI(); this.setTurn('player');
     },
     inspectEnemy() {
@@ -556,6 +583,23 @@ const combat = {
             $('hit-quick').innerText = Math.min(99, hit+15) + "%"; $('hit-normal').innerText = Math.min(99, hit) + "%"; $('hit-power').innerText = Math.min(99, hit-20) + "%";
         }
     },
+    logMessage(msg) {
+        if(!this.log) this.log = [];
+        this.log.push(msg);
+        if(this.log.length > 4) this.log.shift();
+        const el = $('combat-log');
+        if(el) el.innerHTML = this.log.map(t => `<div>${t}</div>`).join('');
+    },
+    flashBlood() {
+        const v = $('blood-vignette');
+        if(!v) return;
+        v.classList.remove('show');
+        void v.offsetWidth;
+        v.classList.add('show');
+        setTimeout(() => {
+            v.classList.remove('show');
+        }, 220);
+    },
     calcHit(atk, def) { return Math.max(10, Math.min(99, 80 + (atk - def) * 2)); },
     setTurn(who) {
         this.turn = who; const ind = $('turn-indicator'); const acts = $('combat-actions');
@@ -605,6 +649,7 @@ const combat = {
         if(totalDmg > 0) {
             this.takeDamage(totalDmg, 'player');
             this.showDmg(totalDmg, 'player', 'dot');
+            this.logMessage(`Damage over time effects deal <span class="log-dmg">${totalDmg}</span> damage to you.`);
         }
     },
     takeDamage(amount, target) {
@@ -612,6 +657,7 @@ const combat = {
             let rem = amount;
             if(this.armor > 0) { if(this.armor >= amount) { this.armor -= amount; rem = 0; } else { rem = amount - this.armor; this.armor = 0; } }
             this.hp -= rem; if(this.hp < 0) this.hp = 0;
+            if(rem > 0) this.flashBlood();
         } else { this.enemy.hp -= amount; }
     },
     async playerAttack(type) {
@@ -627,7 +673,9 @@ const combat = {
         const p = game.player; const e = this.enemy;
         if(type === 'heal') {
             const heal = Math.floor(this.maxHp * 0.4); this.hp = Math.min(this.maxHp, this.hp + heal);
-            this.showDmg(heal, 'player', 'heal'); this.updateUI(); this.setTurn('enemy'); this.actionLock = false; return;
+            this.showDmg(heal, 'player', 'heal');
+            this.logMessage(`You drink a potion and heal ${heal} HP.`);
+            this.updateUI(); this.setTurn('enemy'); this.actionLock = false; return;
         }
         let hit = this.calcHit(p.stats.atk, e.def);
         let mod = 1, bonus = 0, shake = 'shake-md';
@@ -642,8 +690,14 @@ const combat = {
             if(isCrit) dmg = Math.floor(dmg * 1.5);
             this.takeDamage(dmg, 'enemy');
             this.showDmg(dmg, 'enemy', isCrit?'crit':'dmg');
+            const label = type==='quick' ? 'Quick' : (type==='power' ? 'Power' : 'Normal');
+            const critText = isCrit ? ' (CRIT)' : '';
+            this.logMessage(`You use ${label} Attack and hit ${e.name} for <span class="log-dmg">${dmg}</span>.${critText}`);
             const c=$('game-container'); c.classList.add(shake); setTimeout(()=>c.classList.remove(shake),500);
-        } else { this.showDmg("DODGE", 'enemy', 'miss'); }
+        } else {
+            this.showDmg("DODGE", 'enemy', 'miss');
+            this.logMessage(`Your attack misses ${e.name}.`);
+        }
         this.updateUI();
         if(e.hp <= 0) { await wait(1000); this.win(); this.actionLock = false; } else { await wait(800); this.setTurn('enemy'); this.actionLock = false; }
     },
@@ -655,6 +709,7 @@ const combat = {
             let dmg = Math.floor(e.str * 1.5);
             this.takeDamage(dmg, 'player');
             this.showDmg(dmg, 'player', 'dmg');
+            this.logMessage(`${e.name} hits you for <span class="log-dmg">${dmg}</span>.`);
             // chance to apply DOTs based on enemy type, reduced by per-effect resistance
             if(typeof STATUS_EFFECTS_CONFIG !== 'undefined') {
                 const defs = STATUS_EFFECTS_CONFIG.enemies[e.name];
@@ -668,7 +723,10 @@ const combat = {
                 }
             }
             const c=$('game-container'); c.classList.add('shake-sm'); setTimeout(()=>c.classList.remove('shake-sm'),300);
-        } else { this.showDmg("DODGE", 'player', 'miss'); }
+        } else {
+            this.showDmg("DODGE", 'player', 'miss');
+            this.logMessage(`${e.name}'s attack misses you.`);
+        }
         this.updateUI();
         if(this.hp <= 0) { await wait(1000); alert("DEFEAT!"); game.player.gold=Math.floor(game.player.gold*0.9); game.saveGame(); game.showHub(); }
         else { await wait(500); this.setTurn('player'); }

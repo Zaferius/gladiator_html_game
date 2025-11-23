@@ -1,0 +1,14 @@
+-düsman health regen
+-avatarlar
+-gamble black jack düzeltmesi.
+-Skill tree - axe mastery - sword mastery ...   
+-Büyücü itemleri büyü yapma olayı
+-hit yediğimizde kan vinyet
+-fight ekranı ortasında log
+-düsmanlar savas basladıgında - hit yediğinde - hit attıgında konusmaları
+-Düsmanların health barı tamamen azalmıyor bazen. 5 canı varken 40 dmg yerse azalmadan ölüyor.
+-Düsmanların stats ekranı polish
+-can barları outline bi tık büyütelim.
+-düsmanların health barı azalırken kan vinyet
+-her 2 lvl atlamada 1 turnuva. Turnuva sistemi. Turnuvada ölürsen Karakter geberir.
+-Trinketler. Trinket takma
