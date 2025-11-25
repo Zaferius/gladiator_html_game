@@ -136,7 +136,7 @@
         <div id="blood-vignette"></div>
 
         <!-- CENTER COMBAT LOG -->
-        <div id="combat-log" class="combat-log"></div>
+        <div id="combat-log" class="combat-log" onclick="combat.toggleLogExpand()"></div>
 
         <!-- PLAYER -->
         <div class="combat-unit player-unit">
@@ -184,6 +184,7 @@
                 <div>ITEM</div>
                 <div class="sort-btn" onclick="game.toggleSort('rarity')">RARITY ↕</div>
                 <div class="sort-btn" onclick="game.toggleSort('type')">TYPE ↕</div>
+                <div class="sort-btn" onclick="game.toggleSort('level')">LEVEL ↕</div>
                 <div class="sort-btn" onclick="game.toggleSort('price')">PRICE ↕</div>
                 <div>ACTION</div>
             </div>
@@ -281,17 +282,12 @@
                 <div>Vitality: <span id="ins-vit" class="text-green">10</span></div>
                 <div>Magicka: <span id="ins-mag" class="text-purple">0</span></div>
                 <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
-                <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-                    <div>
-                        <div>Weapon Damage: <span id="ins-weapon-dmg" class="text-orange">0-0</span></div>
-                        <div style="font-size:0.9rem; color:#aaa;">Type: <span id="ins-weapon-type" class="text-blue">Unknown</span></div>
-                    </div>
-                    <img id="ins-weapon-icon" class="ins-weapon-icon hidden" src="" alt="weapon icon">
-                </div>
+                <div>Weapon: <span id="ins-weapon-name" class="text-orange" style="cursor:pointer;">Unknown</span></div>
+                <div>Damage Range: <span id="ins-weapon-range" class="text-orange">-</span></div>
                 <div style="color:#888; font-style:italic;" id="ins-desc">"A dangerous foe."</div>
             </div>
         </div>
-    </div>""
+    </div>
 
     <div id="modal-armor" class="modal-overlay hidden">
         <div class="modal-box" style="max-width:620px; width:620px;">

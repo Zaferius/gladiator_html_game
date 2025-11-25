@@ -261,6 +261,13 @@ const game = {
             if (item.type === 'armor') return (item.val ?? 0);
             return 0;
         };
+        const levelVal = (item) => {
+            if (!item) return 0;
+            // shop/catalog tarafında kullandığımız min level bilgisi
+            if (typeof item.minLevel === 'number') return item.minLevel;
+            if (typeof item.minShopLevel === 'number') return item.minShopLevel;
+            return 1;
+        };
         const typeVal = (item) => {
             if (!item) return '';
             if (item.type === 'weapon') {
@@ -283,6 +290,8 @@ const game = {
                 av = statVal(a); bv = statVal(b);
             } else if (this.shopSortKey === 'type') {
                 av = typeVal(a); bv = typeVal(b);
+            } else if (this.shopSortKey === 'level') {
+                av = levelVal(a); bv = levelVal(b);
             } else { // price
                 av = a.price ?? 0; bv = b.price ?? 0;
             }
@@ -581,6 +590,12 @@ const game = {
         const previewBox = $('shop-preview');
         const previewBody = $('shop-preview-body');
         const previewIcon = $('shop-preview-icon');
+        const getItemMinLevel = (item) => {
+            if (!item) return 1;
+            if (typeof item.minLevel === 'number') return item.minLevel;
+            if (typeof item.minShopLevel === 'number') return item.minShopLevel;
+            return 1;
+        };
         const getItemTypeLabel = (item) => {
             if (!item) return '';
             if (item.type === 'weapon') {
@@ -623,6 +638,7 @@ const game = {
         const buildPreviewFromItem = (item) => {
             if (!item || !previewBody) return;
             const rarityText = (item.rarity || '').replace('rarity-','');
+            const minLvl = getItemMinLevel(item);
             let lines = [];
             lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="${item.rarity}">${item.name}</div>`);
             if (item.type === 'weapon') {
@@ -657,7 +673,13 @@ const game = {
                     lines.push('</div>');
                 }
             }
-            lines.push(`<div style="margin-top:6px; font-size:0.8rem; color:#aaa;">Rarity: ${rarityText}</div>`);
+            // Rarity + Level satırı (sağ altta Lvl X)
+            lines.push(`
+                <div style="margin-top:6px; font-size:0.8rem; color:#aaa; display:flex; justify-content:space-between; align-items:center;">
+                    <span>Rarity: ${rarityText}</span>
+                    <span class="text-gold" style="font-size:0.95rem;">Lvl ${minLvl}</span>
+                </div>
+            `);
 
             // Optional lore/info line from catalog (info + infoColor)
             if (item.info) {
@@ -770,6 +792,8 @@ const game = {
             const slotTag = item.type === 'armor' ? ` <span style="color:#666; font-size:0.7rem">[${item.slot}]</span>` : '';
             const isLegendaryWeapon = item.type === 'weapon' && item.rarityKey === 'legendary';
             const showTags = (mode !== 'shop');
+            const minLvl = getItemMinLevel(item);
+            const lvlOk = !this.player || (this.player.level >= minLvl);
             let nameHtml;
             if(isLegendaryWeapon) {
                 const baseName = cleanLegendaryWeaponName(item);
@@ -788,12 +812,25 @@ const game = {
             }
             const btnTxt = mode === 'shop' ? `Buy` : 'Equip';
             const priceTxt = mode === 'shop' ? `${item.price}` : '-';
-            let btnState = (mode === 'shop' && this.player.gold < item.price) ? "disabled" : "";
+            let btnState = "";
+            if (mode === 'shop') {
+                if (!lvlOk || this.player.gold < item.price) btnState = "disabled";
+            }
             const btnClass = mode === 'shop' ? 'btn btn-buy' : 'btn';
 
             const typeLabel = getItemTypeLabel(item);
 
-            div.innerHTML = `<div class="${item.rarity}">${nameHtml}</div><div style="font-size:0.8rem;">${item.rarity.replace('rarity-', '')}</div><div style="font-size:0.8rem; color:#ccc;">${typeLabel}</div><div class="text-gold">${priceTxt}</div><button class="${btnClass}" style="padding:5px 10px; font-size:0.8rem;" ${btnState}>${btnTxt}</button>`;
+            const lvlColor = lvlOk ? '#ccc' : '#f44336';
+            const lvlHtml = `<span style="color:${lvlColor};">${minLvl}</span>`;
+
+            div.innerHTML = `
+                <div class="${item.rarity}">${nameHtml}</div>
+                <div style="font-size:0.8rem;">${item.rarity.replace('rarity-','')}</div>
+                <div style="font-size:0.8rem; color:#ccc;">${typeLabel}</div>
+                <div style="font-size:0.8rem; color:${lvlColor};">${lvlHtml}</div>
+                <div class="text-gold">${priceTxt}</div>
+                <button class="${btnClass}" style="padding:5px 10px; font-size:0.8rem;" ${btnState}>${btnTxt}</button>
+            `;
 
             // Hover tooltip for all items (shop or inventory)
             if (previewBox && previewBody) {
@@ -1120,6 +1157,30 @@ const combat = {
     playerDots: [], // active DOT effects on player
     dotResist: {},  // per-combat resistance per DOT id (0-1)
     log: [],        // recent combat log lines
+    getEnemyMaxHp(e) {
+        // Player HP: 100 + VIT*10 + lvl*5 (sonra Guardian çarpanı)
+        // Enemy için biraz daha düşük bir versiyon kullanalım
+        const vit = e.vit || 0;
+        const lvl = e.lvl || 1;
+        return 90 + (vit * 8) + (lvl * 4);
+    },
+    getEnemyDmgRange(e) {
+        // Player damage: weapon.min/max + STR*2
+        // Enemy için hafif daha zayıf: weapon.min/max + floor(STR * 1.5)
+        const str = e.str || 0;
+        const strBonus = Math.floor(str * 1.5);
+        const w = e.weapon;
+        if (w && typeof w.min === 'number' && typeof w.max === 'number') {
+            return {
+                min: Math.max(1, w.min + strBonus),
+                max: Math.max(1, w.max + strBonus)
+            };
+        }
+        return {
+            min: Math.max(1, 2 + strBonus),
+            max: Math.max(1, 4 + strBonus)
+        };
+    },
     init() {
         const p = game.player;
         this.maxHp = p.getMaxHp(); this.hp = this.maxHp;
@@ -1128,28 +1189,121 @@ const combat = {
         this.dotResist = {};
         const s = p.level;
         const enemyName = ["Orc", "Goblin", "Bandit", "Skeleton", "Troll"][rng(0,4)];
-        // Temel enemy statları
-        this.enemy = { name: enemyName, lvl: s, maxHp: 100+(s*20), hp: 100+(s*20), str: 6+(s*2), atk: 5+s, def: 2+s, vit: 5+s, mag: 0 };
-        // Basit enemy silahı (hasar aralığı + tür)
-        const base = Math.floor(this.enemy.str * 1.2);
-        const weaponMin = Math.max(3, base - 4);
-        const weaponMax = base + 4;
-        let weaponClass = 'Sword';
-        let baseType = 'Sword';
-        if (enemyName === 'Orc' || enemyName === 'Troll') { weaponClass = 'Axe'; baseType = 'Axe'; }
-        else if (enemyName === 'Goblin') { weaponClass = 'Dagger'; baseType = 'Dagger'; }
-        else if (enemyName === 'Skeleton') { weaponClass = 'Spear'; baseType = 'Spear'; }
-        else if (enemyName === 'Bandit') { weaponClass = 'Sword'; baseType = 'Sword'; }
-        // icon path haritası (player silah ikonlarıyla uyumlu)
-        let iconPath = '';
-        const clsLower = weaponClass.toLowerCase();
-        if (clsLower === 'axe') iconPath = 'assets/weapon-icons/axe_icon.png';
-        else if (clsLower === 'sword') iconPath = 'assets/weapon-icons/sword_icon.png';
-        else if (clsLower === 'hammer') iconPath = 'assets/weapon-icons/hammer_icon.png';
-        else if (clsLower === 'dagger') iconPath = 'assets/weapon-icons/dagger_icon.png';
-        else if (clsLower === 'spear') iconPath = 'assets/weapon-icons/spear_icon.png';
-        else if (clsLower === 'bow') iconPath = 'assets/weapon-icons/crossbow_icon.png';
-        this.enemy.weapon = { min: weaponMin, max: weaponMax, weaponClass, baseType, iconPath };
+
+        // Düşman statlarını seviye ile orantılı hesapla
+        // Basit kural: toplam STR+ATK+DEF+VIT = 9 + (level - 1) * 3
+        const totalPts = 9 + 3 * Math.max(0, s - 1);
+        // Temel ağırlıklar (farklı düşman tipleri için ufak varyasyon)
+        let wStr = 3, wAtk = 3, wDef = 1, wVit = 2;
+        if (enemyName === 'Orc' || enemyName === 'Troll') { wStr = 4; wAtk = 3; wDef = 1; wVit = 2; }
+        else if (enemyName === 'Goblin') { wStr = 2; wAtk = 4; wDef = 1; wVit = 2; }
+        else if (enemyName === 'Skeleton') { wStr = 2; wAtk = 3; wDef = 3; wVit = 1; }
+        else if (enemyName === 'Bandit') { wStr = 3; wAtk = 3; wDef = 2; wVit = 2; }
+
+        const wSum = wStr + wAtk + wDef + wVit;
+        // Toplam puanı ağırlıklara göre bölüştür
+        let baseStr = Math.max(0, Math.floor(totalPts * wStr / wSum));
+        let baseAtk = Math.max(0, Math.floor(totalPts * wAtk / wSum));
+        let baseDef = Math.max(0, Math.floor(totalPts * wDef / wSum));
+        let baseVit = Math.max(0, Math.floor(totalPts * wVit / wSum));
+        let curSum = baseStr + baseAtk + baseDef + baseVit;
+        let rem = totalPts - curSum;
+        // Kalan puanları STR/ATK/VIT'e dağıt
+        const order = ['str','atk','vit'];
+        const stats = { str: baseStr, atk: baseAtk, def: baseDef, vit: baseVit };
+        let oi = 0;
+        while (rem > 0) {
+            const key = order[oi % order.length];
+            stats[key] += 1;
+            rem--;
+            oi++;
+        }
+
+        // Temel enemy statları (HP formülü şimdilik eskisi gibi kalsın)
+        this.enemy = {
+            name: enemyName,
+            lvl: s,
+            maxHp: 0,
+            hp: 0,
+            str: stats.str,
+            atk: stats.atk,
+            def: stats.def,
+            vit: stats.vit,
+            mag: 0
+        };
+
+        // Enemy silahını merkezi WEAPONS kataloğundan seç
+        let desiredClass = 'Sword';
+        if (enemyName === 'Orc' || enemyName === 'Troll') desiredClass = 'Axe';
+        else if (enemyName === 'Goblin') desiredClass = 'Dagger';
+        else if (enemyName === 'Skeleton') desiredClass = 'Spear';
+        else if (enemyName === 'Bandit') desiredClass = 'Sword';
+
+        let enemyWeapon = null;
+        if (typeof WEAPONS !== 'undefined') {
+            let pool = WEAPONS.filter(w => {
+                const cls = (w.weaponClass || w.baseType || '').toLowerCase();
+                const want = desiredClass.toLowerCase();
+                const lvlReq = (typeof w.minShopLevel === 'number') ? w.minShopLevel : 1;
+                return cls.includes(want) && lvlReq <= s;
+            });
+            if (pool.length === 0) {
+                pool = WEAPONS.filter(w => {
+                    const lvlReq = (typeof w.minShopLevel === 'number') ? w.minShopLevel : 1;
+                    return lvlReq <= s;
+                });
+            }
+            if (pool.length > 0) {
+                const tpl = pool[rng(0, pool.length - 1)];
+                enemyWeapon = { ...tpl };
+            }
+        }
+
+        if (!enemyWeapon) {
+            // Fallback: önceki basit STR tabanlı silah hesaplaması
+            const base = Math.floor(this.enemy.str * 1.2);
+            const weaponMin = Math.max(3, base - 4);
+            const weaponMax = base + 4;
+            let weaponClass = desiredClass;
+            let baseType = desiredClass;
+            let iconPath = '';
+            const clsLower = weaponClass.toLowerCase();
+            if (clsLower === 'axe') iconPath = 'assets/weapon-icons/axe_icon.png';
+            else if (clsLower === 'sword') iconPath = 'assets/weapon-icons/sword_icon.png';
+            else if (clsLower === 'hammer') iconPath = 'assets/weapon-icons/hammer_icon.png';
+            else if (clsLower === 'dagger') iconPath = 'assets/weapon-icons/dagger_icon.png';
+            else if (clsLower === 'spear') iconPath = 'assets/weapon-icons/spear_icon.png';
+            else if (clsLower === 'bow') iconPath = 'assets/weapon-icons/crossbow_icon.png';
+            enemyWeapon = { min: weaponMin, max: weaponMax, weaponClass, baseType, iconPath };
+        }
+
+        // icon path haritası (player silah ikonlarıyla uyumlu) – katalog itemlerinde eksikse buradan doldur
+        if (!enemyWeapon.iconPath) {
+            const cls = (enemyWeapon.weaponClass || enemyWeapon.baseType || '').toLowerCase();
+            let iconPath = '';
+            if (cls.includes('axe')) iconPath = 'assets/weapon-icons/axe_icon.png';
+            else if (cls.includes('sword') || cls.includes('blade')) iconPath = 'assets/weapon-icons/sword_icon.png';
+            else if (cls.includes('hammer') || cls.includes('mace')) iconPath = 'assets/weapon-icons/hammer_icon.png';
+            else if (cls.includes('dagger')) iconPath = 'assets/weapon-icons/dagger_icon.png';
+            else if (cls.includes('spear') || cls.includes('halberd') || cls.includes('lance')) iconPath = 'assets/weapon-icons/spear_icon.png';
+            else if (cls.includes('bow') || cls.includes('crossbow')) iconPath = 'assets/weapon-icons/crossbow_icon.png';
+            enemyWeapon.iconPath = iconPath;
+        }
+
+        this.enemy.weapon = enemyWeapon;
+
+        // Silahın statMods değerlerini enemy statlarına ekle (STR/ATK/DEF/VIT)
+        if (enemyWeapon && enemyWeapon.statMods) {
+            const m = enemyWeapon.statMods;
+            if (typeof m.str === 'number') this.enemy.str += m.str;
+            if (typeof m.atk === 'number') this.enemy.atk += m.atk;
+            if (typeof m.def === 'number') this.enemy.def += m.def;
+            if (typeof m.vit === 'number') this.enemy.vit += m.vit;
+        }
+
+        // Enemy'nin gerçek max HP'sini (silah buff'lı VIT + level'e göre) ayarla
+        this.enemy.maxHp = this.getEnemyMaxHp(this.enemy);
+        this.enemy.hp = this.enemy.maxHp;
         $('screen-hub').classList.add('hidden'); $('screen-combat').classList.remove('hidden'); $('enemy-think').style.display='none';
         this.log = [];
         this.logMessage(`${this.enemy.name} enters the arena!`);
@@ -1176,25 +1330,100 @@ const combat = {
         $('ins-mag').innerText = e.mag;
 
         const w = e.weapon || null;
-        const dmgEl = $('ins-weapon-dmg');
-        const typeEl = $('ins-weapon-type');
-        const iconEl = $('ins-weapon-icon');
+        const nameEl = $('ins-weapon-name');
+        const rangeEl = $('ins-weapon-range');
         if (w) {
-            if (dmgEl) dmgEl.innerText = `${w.min}-${w.max}`;
-            if (typeEl) typeEl.innerText = w.baseType || w.weaponClass || 'Weapon';
-            if (iconEl) {
-                if (w.iconPath) {
-                    iconEl.src = w.iconPath;
-                    iconEl.classList.remove('hidden');
-                } else {
-                    iconEl.src = '';
-                    iconEl.classList.add('hidden');
-                }
+            if (nameEl) nameEl.innerText = w.name || (w.baseType || 'Weapon');
+            // Inspect Damage Range: STR bonuslu efektif aralığı göster
+            if (rangeEl) {
+                const erange = this.getEnemyDmgRange(e);
+                rangeEl.innerText = `${erange.min}-${erange.max}`;
+            }
+
+            // Inspect ekranındaki silah ismine tooltip bağla
+            if (nameEl) {
+                const previewBox = $('shop-preview');
+                const previewBody = $('shop-preview-body');
+                const previewIcon = $('shop-preview-icon');
+                nameEl.onmouseenter = (ev) => {
+                    if (!previewBox || !previewBody) return;
+                    // Basit tooltip: shop/inventory ile aynı stil
+                    let lines = [];
+                    const rarityText = (w.rarity || '').replace('rarity-','');
+                    const minLvl = (typeof w.minLevel === 'number') ? w.minLevel : (typeof w.minShopLevel === 'number' ? w.minShopLevel : 1);
+                    lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="${w.rarity || ''}">${w.name || (w.baseType || 'Weapon')}</div>`);
+                    if (typeof w.min === 'number' && typeof w.max === 'number') {
+                        lines.push(`<div><span class="text-orange">Damage:</span> ${w.min}-${w.max}</div>`);
+                    }
+                    if (w.baseType) {
+                        lines.push(`<div><span class="text-blue">Type:</span> ${w.baseType}</div>`);
+                    }
+                    if (w.statMods) {
+                        const map = [
+                            { key: 'str', label: 'Strength', cls: 'text-orange' },
+                            { key: 'atk', label: 'Attack',   cls: 'text-red' },
+                            { key: 'def', label: 'Defence',  cls: 'text-blue' },
+                            { key: 'vit', label: 'Vitality', cls: 'text-green' },
+                            { key: 'mag', label: 'Magicka',  cls: 'text-purple' },
+                            { key: 'chr', label: 'Charisma', cls: 'text-gold' }
+                        ];
+                        const modLines = [];
+                        map.forEach(({key,label,cls}) => {
+                            const v = w.statMods[key];
+                            if (typeof v === 'number' && v !== 0) {
+                                const sign = v > 0 ? '+' : '';
+                                modLines.push(`<div class="${cls}">${sign}${v} ${label}</div>`);
+                            }
+                        });
+                        if (modLines.length) {
+                            lines.push('<div style="margin-top:6px; font-size:0.85rem;">');
+                            lines = lines.concat(modLines);
+                            lines.push('</div>');
+                        }
+                    }
+                    lines.push(`
+                        <div style="margin-top:6px; font-size:0.8rem; color:#aaa; display:flex; justify-content:space-between; align-items:center;">
+                            <span>Rarity: ${rarityText}</span>
+                            <span class="text-gold" style="font-size:0.95rem;">Lvl ${minLvl}</span>
+                        </div>
+                    `);
+                    if (w.info) {
+                        const infoClass = w.infoColor || 'text-gold';
+                        lines.push(`<div class="${infoClass}" style="margin-top:4px; font-size:0.8rem; font-style:italic;">${w.info}</div>`);
+                    }
+                    previewBody.innerHTML = lines.join('');
+
+                    if (previewIcon) {
+                        if (w.iconPath) {
+                            previewIcon.src = w.iconPath;
+                            previewIcon.classList.remove('hidden');
+                        } else {
+                            previewIcon.src = '';
+                            previewIcon.classList.add('hidden');
+                        }
+                    }
+
+                    const rect = $('game-container').getBoundingClientRect();
+                    const offsetX = 20, offsetY = 10;
+                    let x = ev.clientX - rect.left + offsetX;
+                    let y = ev.clientY - rect.top + offsetY;
+                    const maxX = rect.width - 340;
+                    const maxY = rect.height - 160;
+                    x = Math.max(10, Math.min(maxX, x));
+                    y = Math.max(10, Math.min(maxY, y));
+                    previewBox.style.left = x + 'px';
+                    previewBox.style.top = y + 'px';
+                    previewBox.classList.remove('hidden');
+                    previewBox.classList.add('visible');
+                };
+                nameEl.onmouseleave = () => {
+                    const previewBox = $('shop-preview');
+                    if (previewBox) previewBox.classList.remove('visible');
+                };
             }
         } else {
-            if (dmgEl) dmgEl.innerText = '–';
-            if (typeEl) typeEl.innerText = 'Unknown';
-            if (iconEl) { iconEl.src = ''; iconEl.classList.add('hidden'); }
+            if (nameEl) nameEl.innerText = '–';
+            if (rangeEl) rangeEl.innerText = '-';
         }
     },
     updateUI() {
@@ -1251,11 +1480,49 @@ const combat = {
         this.log.push(msg);
         if(this.log.length > 4) this.log.shift();
         const el = $('combat-log');
-        if(el) el.innerHTML = this.log.map(t => `<div>${t}</div>`).join('');
+        if(el) {
+            // Son 3-4 satırı küçük kutuda göster
+            const recent = this.log.slice(-4);
+            el.innerHTML = recent.map(t => `<div>${t}</div>`).join('');
+        }
+    },
+    toggleLogExpand() {
+        const el = $('combat-log');
+        if(!el) return;
+        el.classList.toggle('expanded');
     },
     flashBlood() {
         const v = $('blood-vignette');
         if(!v) return;
+        // Normal darbe için varsayılan kırmızı vignette arka planını kullan
+        v.style.background = '';
+        v.classList.remove('show');
+        void v.offsetWidth;
+        v.classList.add('show');
+        setTimeout(() => {
+            v.classList.remove('show');
+        }, 220);
+    },
+    flashDotVignette(effects) {
+        // effects: { hasPoison, hasBurn, hasBleed }
+        const v = $('blood-vignette');
+        if(!v) return;
+
+        let bg = '';
+        if (effects && effects.hasBleed) {
+            // Kırmızı (bleed)
+            bg = 'radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 45%, rgba(255,0,0,0.18) 70%, rgba(120,0,0,0.8) 100%)';
+        } else if (effects && effects.hasBurn) {
+            // Turuncu (burn)
+            bg = 'radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 45%, rgba(255,140,0,0.18) 70%, rgba(180,70,0,0.8) 100%)';
+        } else if (effects && effects.hasPoison) {
+            // Açık yeşil (poison)
+            bg = 'radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 45%, rgba(120,255,120,0.18) 70%, rgba(0,120,0,0.8) 100%)';
+        }
+
+        if (!bg) return;
+
+        v.style.background = bg;
         v.classList.remove('show');
         void v.offsetWidth;
         v.classList.add('show');
@@ -1326,12 +1593,18 @@ const combat = {
         if(typeof STATUS_EFFECTS_CONFIG === 'undefined') return false;
         let totalDmg = 0;
         const nextDots = [];
+        let hasPoison = false;
+        let hasBurn = false;
+        let hasBleed = false;
         this.playerDots.forEach(dot => {
             const cfg = STATUS_EFFECTS_CONFIG.effects[dot.id];
             if(!cfg) return;
             const raw = Math.floor(this.maxHp * cfg.damagePct);
             const dmg = Math.max(1, raw);
             totalDmg += dmg;
+            if (dot.id === 'poison') hasPoison = true;
+            if (dot.id === 'burn') hasBurn = true;
+            if (dot.id === 'bleed') hasBleed = true;
             dot.remaining -= 1;
             if(dot.remaining > 0) {
                 nextDots.push(dot);
@@ -1344,6 +1617,8 @@ const combat = {
         this.playerDots = nextDots;
         if(totalDmg > 0) {
             this.takeDamage(totalDmg, 'player');
+            // Aktif DOT tiplerine göre renkli vignette göster
+            this.flashDotVignette({ hasPoison, hasBurn, hasBleed });
             this.showDmg(totalDmg, 'player', 'dot');
             this.logMessage(`Damage over time effects deal <span class="log-dmg">${totalDmg}</span> damage to you.`);
             // DOT'tan ölme durumu: hemen yenilgi ekranını tetikle
@@ -1437,12 +1712,8 @@ const combat = {
         let hit = this.calcHit(e.atk, p.stats.def);
         hit = Math.max(10, Math.min(99, hit - p.getDodgeBonus()));
         if(rng(0,100) <= hit) {
-            let dmg;
-            if (e.weapon && typeof e.weapon.min === 'number' && typeof e.weapon.max === 'number') {
-                dmg = rng(e.weapon.min, e.weapon.max);
-            } else {
-                dmg = Math.floor(e.str * 1.5);
-            }
+            const erange = this.getEnemyDmgRange(e);
+            let dmg = rng(erange.min, erange.max);
 
             // Düşman kritik ve Disastrous Hit
             const critChanceEnemy = 5 + e.atk;
@@ -1531,7 +1802,8 @@ const combat = {
             el.style.fontSize = '3.5rem';
         }
         else if(type==='dot'){
-            el.innerText = `-${val}`;
+            // DOT hasarında pozitif sayı göster (eksi yok)
+            el.innerText = `${val}`;
             el.style.color = '#d500f9';
             el.style.fontSize = '3.2rem';
         }
