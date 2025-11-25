@@ -438,7 +438,7 @@ const game = {
             <div class="stat-row"><span>Magicka</span> <span class="text-purple">${p.stats.mag} <button class="btn-xs" onclick="game.debugModStat('mag',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('mag',1)">+</button></span></div>
             <div class="stat-row"><span>Charisma</span> <span class="text-gold">${(p.stats.chr ?? 0)} <button class="btn-xs" onclick="game.debugModStat('chr',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('chr',1)">+</button></span></div>
             <div style="margin-top:10px; color:#fff; font-size:0.8rem; text-align:center;">Health: ${p.getMaxHp()} | <span class="text-shield">Armor: ${arm}</span></div>
-            <div style="margin-top:4px; color:#ff9100; font-size:0.8rem; text-align:center;">Weapon Damage: ${dmg.min}-${dmg.max}</div>
+            <div style="margin-top:4px; color:#ff9100; font-size:0.8rem; text-align:center;">Melee Damage: ${dmg.min}-${dmg.max}</div>
         `;
         
         // Equipment Lists
@@ -658,6 +658,12 @@ const game = {
                 }
             }
             lines.push(`<div style="margin-top:6px; font-size:0.8rem; color:#aaa;">Rarity: ${rarityText}</div>`);
+
+            // Optional lore/info line from catalog (info + infoColor)
+            if (item.info) {
+                const infoClass = item.infoColor || 'text-gold';
+                lines.push(`<div class="${infoClass}" style="margin-top:4px; font-size:0.8rem; font-style:italic;">${item.info}</div>`);
+            }
             previewBody.innerHTML = lines.join('');
 
             // Handle item type icon (weapon / armor)
