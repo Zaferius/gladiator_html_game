@@ -31,22 +31,6 @@ class ItemSystem {
     }
     static createWeapon(lvl) {
         const rarity = this.getRarity();
-        const baseTypes = ["Blade", "Longsword", "War Axe", "Hammer", "Mace", "Dagger", "Spear", "Halberd", "Bow", "Crossbow"];
-        const baseType = baseTypes[rng(0, baseTypes.length-1)];
-        const weaponClassMap = {
-            Axe: ["War Axe"],
-            Sword: ["Blade", "Longsword"],
-            Hammer: ["Hammer", "Mace"],
-            Dagger: ["Dagger"],
-            Spear: ["Spear", "Halberd"],
-            Bow: ["Bow", "Crossbow"]
-        };
-        let weaponClass = 'Weapon';
-        Object.keys(weaponClassMap).forEach(cls => {
-            if (weaponClassMap[cls].includes(baseType)) weaponClass = cls;
-        });
-        const baseMin = Math.floor((lvl * 3 + rng(2, 5)) * rarity.mult);
-        const baseMax = baseMin + Math.floor((lvl * 2 + rng(3, 6)) * rarity.mult);
 
         let rarityKey = 'common';
         if (rarity.color === 'rarity-uncommon') rarityKey = 'uncommon';
@@ -54,47 +38,22 @@ class ItemSystem {
         else if (rarity.color === 'rarity-epic') rarityKey = 'epic';
         else if (rarity.color === 'rarity-legendary') rarityKey = 'legendary';
 
-        let displayName = (typeof generateItemName === 'function')
-            ? generateItemName({ category: 'weapon', rarity: rarityKey, baseType })
-            : `${rarity.name} ${baseType}`;
+        // Filter weapons from global catalog (item_catalogs.js) by rarityKey and minShopLevel.
+        let pool = (typeof WEAPONS !== 'undefined')
+            ? WEAPONS.filter(w => w.rarityKey === rarityKey && (w.minShopLevel || 1) <= lvl)
+            : [];
+        if (pool.length === 0 && typeof WEAPONS !== 'undefined') pool = WEAPONS;
+        if (pool.length === 0) return null;
 
-        if (rarityKey === 'legendary') {
-            const escaped = baseType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const re = new RegExp(`\\b${escaped}\\b`, 'i');
-            displayName = displayName.replace(re, '').replace(/\s+/g, ' ').trim();
-        }
+        const template = pool[rng(0, pool.length - 1)];
 
         return {
-            id: Date.now()+Math.random(),
-            type: 'weapon',
-            category: 'weapon',
-            rarityKey,
-            baseType,
-            weaponClass,
-            name: displayName,
-            min: baseMin,
-            max: baseMax,
-            stat: 'Damage',
-            rarity: rarity.color,
-            price: Math.floor(baseMax * 15)
+            ...template,
+            id: Date.now() + Math.random()
         };
     }
     static createArmor(lvl) {
         const rarity = this.getRarity();
-        const slot = ARMOR_SLOTS[rng(0, ARMOR_SLOTS.length-1)];
-        const slotBaseMap = {
-            head:    ["Helm","War Helm","Battle Mask"],
-            neck:    ["Amulet","Gorget","Collar"],
-            shoulders:["Pauldrons","Mantle"],
-            chest:   ["Breastplate","Chestplate","Cuirass"],
-            arms:    ["Gauntlets","Bracers"],
-            shield:  ["Shield","Bulwark","Aegis"],
-            thighs:  ["Legplates","Tassets"],
-            shins:   ["Greaves","War Boots"]
-        };
-        const possible = slotBaseMap[slot] || ["Armor"];
-        const baseType = possible[rng(0, possible.length-1)];
-        const val = Math.floor((lvl * 2 + rng(1, 5)) * rarity.mult);
 
         let rarityKey = 'common';
         if (rarity.color === 'rarity-uncommon') rarityKey = 'uncommon';
@@ -102,22 +61,17 @@ class ItemSystem {
         else if (rarity.color === 'rarity-epic') rarityKey = 'epic';
         else if (rarity.color === 'rarity-legendary') rarityKey = 'legendary';
 
-        const displayName = (typeof generateItemName === 'function')
-            ? generateItemName({ category: 'armor', rarity: rarityKey, slot, baseType })
-            : `${rarity.name} ${baseType}`;
+        let pool = (typeof ARMORS !== 'undefined')
+            ? ARMORS.filter(a => a.rarityKey === rarityKey && (a.minShopLevel || 1) <= lvl)
+            : [];
+        if (pool.length === 0 && typeof ARMORS !== 'undefined') pool = ARMORS;
+        if (pool.length === 0) return null;
+
+        const template = pool[rng(0, pool.length - 1)];
 
         return {
-            id: Date.now()+Math.random(),
-            type: 'armor',
-            category: 'armor',
-            rarityKey,
-            slot,
-            baseType,
-            name: displayName,
-            val: val,
-            stat: 'Armor',
-            rarity: rarity.color,
-            price: Math.floor(val * 15)
+            ...template,
+            id: Date.now() + Math.random()
         };
     }
 }
@@ -132,20 +86,31 @@ class Player {
         ARMOR_SLOTS.forEach(s => this.gear[s] = null);
         this.wins = 0; this.pts = 0;
     }
-    // --- Class passives helpers ---
+    // --- Class passives + gear stat mods helpers ---
+    getGearStatBonus(key) {
+        let bonus = 0;
+        if (!this.gear) return 0;
+        Object.keys(this.gear).forEach(slot => {
+            const item = this.gear[slot];
+            if (!item || !item.statMods) return;
+            const val = item.statMods[key];
+            if (typeof val === 'number') bonus += val;
+        });
+        return bonus;
+    }
     getEffectiveStr() {
-        let s = this.stats.str;
-        if (this.class === 'Beserker') s += Math.floor(this.stats.str / 3); // +1 STR per 3 STR
+        let s = this.stats.str + this.getGearStatBonus('str');
+        if (this.class === 'Beserker') s += Math.floor(s / 3); // +1 STR per 3 STR
         return s;
     }
     getEffectiveAtk() {
-        let a = this.stats.atk;
-        if (this.class === 'Warrior') a += Math.floor(this.stats.atk / 3); // +1 ATK per 3 ATK
+        let a = this.stats.atk + this.getGearStatBonus('atk');
+        if (this.class === 'Warrior') a += Math.floor(a / 3); // +1 ATK per 3 ATK
         return a;
     }
     getEffectiveVit() {
-        let v = this.stats.vit;
-        if (this.class === 'Guardian') v += Math.floor(this.stats.vit / 3); // +1 VIT per 3 VIT
+        let v = this.stats.vit + this.getGearStatBonus('vit');
+        if (this.class === 'Guardian') v += Math.floor(v / 3); // +1 VIT per 3 VIT
         return v;
     }
     getHpMultiplier() {
@@ -255,7 +220,12 @@ const game = {
         const name = $('inp-name').value || "Gladiator";
         const cls = $('inp-class').value;
         this.player = new Player(name, cls, this.selectedAvatar);
-        this.player.equip({ id:1, type:'weapon', name:'Rusty Sword', min:3, max:6, stat:'Damage', rarity:'rarity-common', price:5, weaponClass:'Sword', baseType:'Sword' });
+        const rustTemplate = (typeof getWeaponTemplateByKey === 'function')
+            ? getWeaponTemplateByKey('rusty_sword')
+            : (typeof WEAPONS !== 'undefined' ? WEAPONS.find(w => w.key === 'rusty_sword') : null);
+        if (rustTemplate) {
+            this.player.equip({ ...rustTemplate, id: Date.now() + Math.random() });
+        }
         // Başlangıçta 9 stat puanı dağıtma panelini (creation ekranının sağ tarafı) hazırla
         this.player.pts = 9;
         this.tempCreateStats = { ...this.player.stats };
@@ -461,12 +431,12 @@ const game = {
         const vitBonus = effVit - p.stats.vit;
 
         $('ui-stats').innerHTML = `
-            <div class="stat-row"><span>Strength</span> <span class="text-orange">${effStr}${strBonus>0?` <small>(base ${p.stats.str} +${strBonus})</small>`:''}</span></div>
-            <div class="stat-row"><span>Attack</span> <span class="text-red">${effAtk}${atkBonus>0?` <small>(base ${p.stats.atk} +${atkBonus})</small>`:''}</span></div>
-            <div class="stat-row"><span>Defence</span> <span class="text-blue">${p.stats.def}</span></div>
-            <div class="stat-row"><span>Vitality</span> <span class="text-green">${effVit}${vitBonus>0?` <small>(base ${p.stats.vit} +${vitBonus})</small>`:''}</span></div>
-            <div class="stat-row"><span>Magicka</span> <span class="text-purple">${p.stats.mag}</span></div>
-            <div class="stat-row"><span>Charisma</span> <span class="text-gold">${(p.stats.chr ?? 0)}</span></div>
+            <div class="stat-row"><span>Strength</span> <span class="text-orange">${effStr}${strBonus>0?` <small>(base ${p.stats.str} +${strBonus})</small>`:''} <button class="btn-xs" onclick="game.debugModStat('str',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('str',1)">+</button></span></div>
+            <div class="stat-row"><span>Attack</span> <span class="text-red">${effAtk}${atkBonus>0?` <small>(base ${p.stats.atk} +${atkBonus})</small>`:''} <button class="btn-xs" onclick="game.debugModStat('atk',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('atk',1)">+</button></span></div>
+            <div class="stat-row"><span>Defence</span> <span class="text-blue">${p.stats.def} <button class="btn-xs" onclick="game.debugModStat('def',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('def',1)">+</button></span></div>
+            <div class="stat-row"><span>Vitality</span> <span class="text-green">${effVit}${vitBonus>0?` <small>(base ${p.stats.vit} +${vitBonus})</small>`:''} <button class="btn-xs" onclick="game.debugModStat('vit',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('vit',1)">+</button></span></div>
+            <div class="stat-row"><span>Magicka</span> <span class="text-purple">${p.stats.mag} <button class="btn-xs" onclick="game.debugModStat('mag',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('mag',1)">+</button></span></div>
+            <div class="stat-row"><span>Charisma</span> <span class="text-gold">${(p.stats.chr ?? 0)} <button class="btn-xs" onclick="game.debugModStat('chr',-1)">-</button><button class="btn-xs" onclick="game.debugModStat('chr',1)">+</button></span></div>
             <div style="margin-top:10px; color:#fff; font-size:0.8rem; text-align:center;">Health: ${p.getMaxHp()} | <span class="text-shield">Armor: ${arm}</span></div>
             <div style="margin-top:4px; color:#ff9100; font-size:0.8rem; text-align:center;">Weapon Damage: ${dmg.min}-${dmg.max}</div>
         `;
@@ -662,6 +632,30 @@ const game = {
                 const val = (typeof item.val === 'number') ? item.val : 0;
                 lines.push(`<div><span class="text-shield">Armor:</span> ${val}</div>`);
                 if (item.slot) lines.push(`<div><span class="text-blue">Slot:</span> ${item.slot}</div>`);
+            }
+            // Stat buffs / debuffs from statMods
+            if (item.statMods) {
+                const map = [
+                    { key: 'str', label: 'Strength', cls: 'text-orange' },
+                    { key: 'atk', label: 'Attack',   cls: 'text-red' },
+                    { key: 'def', label: 'Defence',  cls: 'text-blue' },
+                    { key: 'vit', label: 'Vitality', cls: 'text-green' },
+                    { key: 'mag', label: 'Magicka',  cls: 'text-purple' },
+                    { key: 'chr', label: 'Charisma', cls: 'text-gold' }
+                ];
+                const modLines = [];
+                map.forEach(({key,label,cls}) => {
+                    const v = item.statMods[key];
+                    if (typeof v === 'number' && v !== 0) {
+                        const sign = v > 0 ? '+' : '';
+                        modLines.push(`<div class="${cls}">${sign}${v} ${label}</div>`);
+                    }
+                });
+                if (modLines.length) {
+                    lines.push('<div style="margin-top:6px; font-size:0.85rem;">');
+                    lines = lines.concat(modLines);
+                    lines.push('</div>');
+                }
             }
             lines.push(`<div style="margin-top:6px; font-size:0.8rem; color:#aaa;">Rarity: ${rarityText}</div>`);
             previewBody.innerHTML = lines.join('');
@@ -883,6 +877,7 @@ const game = {
         this.lastSlot = index;
         this.writeSaveMeta({ slots: meta.slots, lastSlot: index });
         this.showHub();
+        this.closeLoadMenu();
     },
     openLoadMenu() {
         const meta = this.loadSaveMeta();
@@ -1390,12 +1385,37 @@ const combat = {
             const range = p.getDmgRange();
             const baseDmg = rng(range.min, range.max);
             let dmg = Math.floor(baseDmg * mod);
-            let isCrit = (rng(0,100) < 5 + p.stats.atk + p.getCritBonus());
-            if(isCrit) dmg = Math.floor(dmg * 1.5);
+
+            // Kritik ve Disastrous Hit hesapla
+            const critChance = 5 + p.stats.atk + p.getCritBonus();
+            let isCrit = false;
+            let isDisastrous = false;
+
+            if (rng(0,100) < critChance) {
+                isCrit = true;
+                let critDmg = Math.floor(dmg * 1.5); // normal crit
+
+                if (type === 'power') {
+                    // Oyuncu için Disastrous şansı (örnek: %6)
+                    const disastrousChancePlayer = 6;
+                    if (rng(0,100) < disastrousChancePlayer) {
+                        isDisastrous = true;
+                        // normal crit hasarının 4 katı
+                        dmg = Math.floor(critDmg * 4);
+                    } else {
+                        dmg = critDmg;
+                    }
+                } else {
+                    dmg = critDmg;
+                }
+            }
+
             this.takeDamage(dmg, 'enemy');
-            this.showDmg(dmg, 'enemy', isCrit?'crit':'dmg');
+            this.showDmg(dmg, 'enemy', isDisastrous ? 'disastrous' : (isCrit ? 'crit' : 'dmg'));
             const label = type==='quick' ? 'Quick' : (type==='power' ? 'Power' : 'Normal');
-            const critText = isCrit ? ' (CRIT)' : '';
+            let critText = '';
+            if (isDisastrous) critText = ' (DISASTROUS HIT!)';
+            else if (isCrit) critText = ' (CRIT)';
             this.logMessage(`You use ${label} Attack and hit ${e.name} for <span class="log-dmg">${dmg}</span>.${critText}`);
             const c=$('game-container'); c.classList.add(shake); setTimeout(()=>c.classList.remove(shake),500);
         } else {
@@ -1417,9 +1437,34 @@ const combat = {
             } else {
                 dmg = Math.floor(e.str * 1.5);
             }
+
+            // Düşman kritik ve Disastrous Hit
+            const critChanceEnemy = 5 + e.atk;
+            let isCrit = false;
+            let isDisastrous = false;
+
+            if (rng(0,100) < critChanceEnemy) {
+                isCrit = true;
+                let critDmg = Math.floor(dmg * 1.5);
+
+                // Düşman için daha düşük Disastrous şansı (örnek: %3)
+                const disastrousChanceEnemy = 3;
+                if (rng(0,100) < disastrousChanceEnemy) {
+                    isDisastrous = true;
+                    dmg = Math.floor(critDmg * 4);
+                } else {
+                    dmg = critDmg;
+                }
+            }
+
             this.takeDamage(dmg, 'player');
-            this.showDmg(dmg, 'player', 'dmg');
-            this.logMessage(`${e.name} hits you for <span class="log-dmg">${dmg}</span>.`);
+            this.showDmg(dmg, 'player', isDisastrous ? 'disastrous' : (isCrit ? 'crit' : 'dmg'));
+
+            let extra = '';
+            if (isDisastrous) extra = ' (DISASTROUS HIT!)';
+            else if (isCrit) extra = ' (CRIT)';
+
+            this.logMessage(`${e.name} hits you for <span class="log-dmg">${dmg}</span>.${extra}`);
             // chance to apply DOTs based on enemy type, reduced by per-effect resistance
             if(typeof STATUS_EFFECTS_CONFIG !== 'undefined') {
                 const defs = STATUS_EFFECTS_CONFIG.enemies[e.name];
@@ -1463,10 +1508,33 @@ const combat = {
     animateVal(id,s,e,d){ let obj=$(id),r=e-s,st=new Date().getTime(),et=st+d; let t=setInterval(()=>{ let n=new Date().getTime(),rem=Math.max((et-n)/d,0),v=Math.round(e-(rem*r)); obj.innerHTML=v; if(v==e)clearInterval(t); },20); },
     showDmg(val,t,type) {
         const el=$('dmg-overlay'); 
-        if(type==='crit'){ el.innerHTML=`CRITICAL!<br>${val}!`; el.style.color='#ffea00'; el.style.fontSize='4rem'; }
-        else if(type==='miss'){ el.innerText="DODGE"; el.style.color='#ffeb3b'; el.style.fontSize='3.5rem'; }
-        else if(type==='dot'){ el.innerText=`-${val}`; el.style.color='#d500f9'; el.style.fontSize='3.2rem'; }
-        else { el.innerText=val; el.style.fontSize='3.5rem'; el.style.color=(type==='heal'?'#00e676':(t==='player'?'#ff1744':'#fff')); }
+
+        if(type==='disastrous'){
+            el.innerHTML = `DISASTROUS HIT!<br>${val}!`;
+            el.style.color = '#ff9100';
+            el.style.fontSize = '5rem';
+        }
+        else if(type==='crit'){
+            el.innerHTML = `CRITICAL!<br>${val}!`;
+            el.style.color = '#ffea00';
+            el.style.fontSize = '4rem';
+        }
+        else if(type==='miss'){
+            el.innerText = "DODGE";
+            el.style.color = '#ffeb3b';
+            el.style.fontSize = '3.5rem';
+        }
+        else if(type==='dot'){
+            el.innerText = `-${val}`;
+            el.style.color = '#d500f9';
+            el.style.fontSize = '3.2rem';
+        }
+        else {
+            el.innerText = val;
+            el.style.fontSize = '3.5rem';
+            el.style.color = (type==='heal' ? '#00e676' : (t==='player' ? '#ff1744' : '#fff'));
+        }
+
         el.classList.remove('anim-gravity'); void el.offsetWidth; el.classList.add('anim-gravity');
     }
 };

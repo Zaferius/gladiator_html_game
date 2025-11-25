@@ -248,8 +248,13 @@ function generateItemName(context) {
         baseName = randomChoice(basePool);
     }
 
-    const prefixPool = data.rarityPrefixes[rarity] || [];
+    let prefixPool = data.rarityPrefixes[rarity] || [];
     const suffixPool = data.raritySuffixes[rarity] || [];
+
+    // Legendary itemlerde sadece suffix kullanalım (prefix yok)
+    if (rarity === 'legendary') {
+        prefixPool = [];
+    }
     const rarityPrefix = prefixPool.length ? randomChoice(prefixPool) : '';
     const rawSuffix = suffixPool.length ? randomChoice(suffixPool) : '';
     // Legendary suffixlerde baştaki "of" kelimesini at
@@ -257,8 +262,14 @@ function generateItemName(context) {
         ? rawSuffix.replace(/^of\s+/i, '')
         : rawSuffix;
 
-    const patterns = data.namePatterns[category] || data.namePatterns.weapon;
-    let pattern = randomChoice(patterns);
+    let pattern;
+    if (rarity === 'legendary') {
+        // Legendary isimler: sadece base + suffix
+        pattern = '{baseName} {raritySuffix}';
+    } else {
+        const patterns = data.namePatterns[category] || data.namePatterns.weapon;
+        pattern = randomChoice(patterns);
+    }
 
     let name = pattern
         .replace('{rarityPrefix}', rarityPrefix)
