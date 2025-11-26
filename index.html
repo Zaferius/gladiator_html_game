@@ -132,13 +132,14 @@
     <div id="screen-combat" class="hidden">
         <div id="turn-indicator" style="text-align:center; font-size:2.5rem; margin-top:5px; text-shadow:0 0 15px rgba(0,0,0,0.8);" class="text-green">PLAYER TURN</div>
 
-        <!-- Enemy avatar portrait -->
-        <div class="combat-avatar combat-avatar-enemy">
+        <!-- Enemy avatar portrait (click to inspect) -->
+        <div class="combat-avatar combat-avatar-enemy" onclick="combat.inspectEnemy()">
             <img id="c-enemy-avatar" src="" alt="Enemy" />
         </div>
 
         <!-- ENEMY -->
-        <div class="combat-unit enemy-unit" onclick="combat.inspectEnemy()">
+        <div class="combat-unit enemy-unit">
+
             <div style="font-size:1.4rem;">
                 <span id="c-enemy-name">Orc</span> <span id="c-enemy-lvl" style="color:#666; font-size:1rem;">Lvl 1</span>
             </div>
@@ -154,7 +155,6 @@
                     <div id="c-enemy-hp" class="bar-fill" style="background:var(--accent-red);"></div>
                 </div>
             </div>
-            <div style="font-size:0.7rem; color:#666;">(Click to Inspect)</div>
         </div>
 
         <!-- THINKING TEXT -->

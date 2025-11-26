@@ -13,6 +13,11 @@ Dostum simdi oyunun dengeleriyle ugrasalım. oyunda arena dövüslerinde karsım
 
 bazen düsman 2 defa oynuyıor. Dot varsa biz de oda 2 defa cakıyor
 
+
+-Dostum söyle bir şey yapman mümkü mü.
+
+Ben quick normal powerdan birini seçeceğim. Player avatarı ile Enemy avatarı yukarı asagı hareket ederek aynı Y ekseninde hizalanınca yani ortada. ikisi birbirine dogru hızlanacak ve ortada carpısacak. Böylece hit outputunu vericez. Tam orda damage atılacak. Ne dersin
+
 -perhance enemy avatar seed: (seed:::876714083)
 Enemy Avatar Prompt:
 Square portrait illustration of a dark fantasy enemy inside a thick decorative frame. Extremely dramatic lighting focusing on the face and upper shoulders. The character is centered, looking directly at the viewer with an intimidating and hostile expression. Rough painterly shading with bold shapes instead of fine detail. The background is abstract darkness with hints of dust and crimson light. Visible texture like worn fresco art. Color palette: charcoal black, clay brown, tarnished gold, subtle crimson accents.
@@ -29,3 +34,5 @@ UISafe framing: allow room around the head so the whole portrait fits inside a s
 
 
 -perhance intro image seed : (seed:::968873840)
+
+
