@@ -137,12 +137,15 @@ function trinketPower(statMods) {
 
 function determineTrinketMinShopLevel(power, itemLevel) {
   const score = power + itemLevel;
-  if (score <= 2) return 1;
-  if (score <= 4) return 2;
-  if (score <= 6) return 3;
-  if (score <= 8) return 4;
-  if (score <= 10) return 5;
-  return 6;
+  // Önce eski 1–6 bucket'ını hesapla, sonra 1..6 -> 1,4,7,10,13,16 map et
+  let bucket;
+  if (score <= 2) bucket = 1;
+  else if (score <= 4) bucket = 2;
+  else if (score <= 6) bucket = 3;
+  else if (score <= 8) bucket = 4;
+  else if (score <= 10) bucket = 5;
+  else bucket = 6;
+  return 3 * (bucket - 1) + 1;
 }
 
 function buildTrinketName(baseType, rarityKey, statMods) {

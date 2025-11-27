@@ -10,7 +10,7 @@
     --accent-red: #ff1744;
     --accent-purple: #d500f9;
     --legendary: #ffea00;
-    --shield-color: #00bcd4;
+    --shield-color: #555555;
     --font-main: 'Poppins', sans-serif;
 }
 
@@ -126,9 +126,22 @@ input, select {
     outline: none;
 }
 input:focus, select:focus { border-color: var(--accent-green) !important; }
-.create-basic-row { display:flex; align-items:center; gap:16px; }
-.create-avatar { width:150px; height:150px; border-radius:12px; overflow:hidden; border:2px solid #555; box-shadow:0 0 18px rgba(0,0,0,0.8); background:#111; display:flex; align-items:center; justify-content:center; }
-.create-avatar img { width:120%; height:120%; object-fit:cover; }
+.create-basic-row { display:flex; align-items:center; gap:10px; }
+.avatar-box {
+    width: 90px;
+    height: 90px;
+    border-radius: 4px;
+    background: #222;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.avatar-box img {
+    width: 170%;
+    height: 170%;
+    object-fit: cover;
+    border-radius: 4px;
+}
 .create-basic-fields { flex:1; display:flex; flex-direction:column; }
 
 /* --- BUTTONS --- */
@@ -192,8 +205,8 @@ input:focus, select:focus { border-color: var(--accent-green) !important; }
     z-index:25;
 }
 .combat-avatar img {
-    width:150%;
-    height:150%;
+    width:100%;
+    height:100%;
     object-fit:cover;
 }
 /* DOT icon stack next to player avatar */
@@ -222,6 +235,30 @@ input:focus, select:focus { border-color: var(--accent-green) !important; }
 .combat-avatar-enemy {
     right:50px;
     top:175px;
+}
+/* Enemy / player death cross overlay on top of avatars */
+#enemy-death-cross,
+#player-death-cross {
+    position:absolute;
+    top:50%;
+    left:50%;
+    width:120%;
+    height:120%;
+    object-fit:contain;
+    pointer-events:none;
+    opacity:0;
+    transform:translate(-50%, -50%) scale(1.8);
+    transform-origin:center center;
+    z-index:30;
+}
+.enemy-death-cross-anim,
+.player-death-cross-anim {
+    animation: enemyDeathCrossIn 0.45s cubic-bezier(.25, .00, .30, 1.00) forwards;
+}
+@keyframes enemyDeathCrossIn {
+    0% { opacity:0; transform:translate(-50%, -50%) scale(2.2) rotate(-10deg); }
+    30% { opacity:1; transform:translate(-50%, -50%) scale(1.6) rotate(3deg); }
+    100% { opacity:1; transform:translate(-50%, -50%) scale(1.1) rotate(0deg); }
 }
 /* Blood vignette when player is hit */
 #blood-vignette {
@@ -284,6 +321,40 @@ input:focus, select:focus { border-color: var(--accent-green) !important; }
 .bar-fill { height: 100%; width: 100%; transition: width 0.2s cubic-bezier(.00,.00,.30,1.00); }
 .bar-text { position: absolute; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: #fff; text-shadow: 1px 1px 2px #000; z-index: 2; }
 
+/* Labels inside combat HP/Armor bars */
+#c-player-arm-text::before,
+#c-player-hp-text::before,
+#c-enemy-arm-text::after,
+#c-enemy-hp-text::after {
+    position: absolute;
+    top: 3px;
+    font-size: 0.7rem;
+    color: #ddd;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+}
+#c-player-arm-text::before {
+    content: 'Armor';
+    left: 6px;
+    text-align: left;
+}
+#c-player-hp-text::before {
+    content: 'Health';
+    left: 6px;
+    text-align: left;
+}
+#c-enemy-arm-text::after {
+    content: 'Armor';
+    right: 6px;
+    text-align: right;
+}
+#c-enemy-hp-text::after {
+    content: 'Health';
+    right: 6px;
+    text-align: right;
+}
+
 /* Enemy Bar Specific: Right Aligned Depletion */
 .enemy-bar-container { display: flex; justify-content: flex-end; background: #111; }
 
@@ -293,6 +364,7 @@ input:focus, select:focus { border-color: var(--accent-green) !important; }
 
 /* --- HUB & SHOP --- */
 .menu-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; animation: fadeIn 0.4s ease; }
+#screen-list { position: relative; }
 #screen-start { background: url('assets/images/bg/bg-main-menu.jpeg') center center / cover no-repeat; }
 .hub-top { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 20px 30px; background: rgba(0,0,0,0.4); border-bottom: 1px solid #333; }
 .hub-content { display: flex; width: 100%; height: 100%; }
@@ -310,6 +382,69 @@ input:focus, select:focus { border-color: var(--accent-green) !important; }
 .item-row:hover { background: rgba(255,255,255,0.06); }
 .diff-pos { color: var(--accent-green); font-size: 0.75rem; margin-left: 4px; }
 .diff-neg { color: var(--accent-red); font-size: 0.75rem; margin-left: 4px; }
+
+/* Inspect modal stat value alignment: push values to the right so they line up */
+#ins-lvl,
+#ins-str,
+#ins-atk,
+#ins-def,
+#ins-vit,
+#ins-mag {
+    float: right;
+    min-width: 32px;
+    text-align: right;
+    margin-left: 8px;
+}
+
+/* Inventory Potion Slots card (bottom-left of shop/inventory screen) */
+.potion-slot-card {
+    position: absolute;
+    left: 0;
+    bottom: -10px;
+    transform: translateY(100%);
+    width: 230px;
+    background: rgba(10,10,10,0.94);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 10px 12px;
+    box-shadow: 0 0 18px rgba(0,0,0,0.85);
+    font-size: 0.85rem;
+    color: #ddd;
+}
+.potion-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    color: var(--accent-green);
+}
+.potion-card-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+.potion-card-row:first-of-type {
+    border-top: none;
+}
+.potion-card-slot-label {
+    font-size: 0.8rem;
+    color: #aaa;
+}
+.potion-card-slot-detail {
+    font-size: 0.85rem;
+    color: #fff;
+}
+
+/* Potion shop stock counter next to item name */
+.potion-stock-count {
+    font-size: 0.8rem;
+    margin-left: 6px;
+    color: var(--accent-green);
+    text-shadow: 0 0 8px rgba(0, 255, 0, 0.7);
+}
 
 /* Shop hover preview tooltip (follows cursor) */
 .shop-preview {

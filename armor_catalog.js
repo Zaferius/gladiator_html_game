@@ -145,12 +145,14 @@ function computeArmorValue(baseVal, itemLevel, scale, rarityMult) {
 }
 
 function determineArmorMinShopLevel(avg) {
-  if (avg <= 5) return 1;
-  if (avg <= 8) return 2;
-  if (avg <= 11) return 3;
-  if (avg <= 14) return 4;
-  if (avg <= 17) return 5;
-  return 6;
+  let bucket;
+  if (avg <= 5) bucket = 1;
+  else if (avg <= 8) bucket = 2;
+  else if (avg <= 11) bucket = 3;
+  else if (avg <= 14) bucket = 4;
+  else if (avg <= 17) bucket = 5;
+  else bucket = 6;
+  return 3 * (bucket - 1) + 1; // 1->1, 2->4, 3->7, 4->10, 5->13, 6->16
 }
 
 function buildArmorName(baseType, rarityKey, statMods) {

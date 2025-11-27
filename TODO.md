@@ -1,26 +1,25 @@
--avatarlar
 -Skill tree - axe mastery - sword mastery ...   
 -Büyücü itemleri büyü yapma olayı
 -düsmanlar savas basladıgında - hit yediğinde - hit attıgında konusmaları
--Düsmanların stats ekranı polish
 -can barları outline bi tık büyütelim.
 -her 2 lvl atlamada 1 turnuva. Turnuva sistemi. Turnuvada ölürsen Karakter geberir.
--her arena figth'tı önce kim baslayacaksa yazı tura atma dinamiği. ilerde silahlara özellik ekleriz ( her zaman ilk başla diye falan)
--Shopların level'a göre item cıkarması. alınabilir seyler de olması lazım.
+-oyun dengesi testi lazım str abanınca sanki oyun kolaylasıyor.
+-ilk dot bize geldiğinde de dot'un renklerinde ekran yansın. Sadece dmg aldıgımızda degil.
+--buff veren hicbir item yok suan. handikap olmalı +12 STR - 6 vitality gibi
+--DOT hasar bufflarına sahip silahlar.(karakterler degil)
+--Fight ses efektleri
 
 
-Dostum simdi oyunun dengeleriyle ugrasalım. oyunda arena dövüslerinde karsımıza gelecek düsmanlar her zaman levellarıyla orantılı statlara sahip olsunlar. Yani 1 level adam toplam 25 adet stat dagıtmıs olmasın. oyuncu gibi basta 9 stat dagıtmıs gibi davransın. Her leveldan sonra stat arttırsın aynen player gibi. 
 
-bazen düsman 2 defa oynuyıor. Dot varsa biz de oda 2 defa cakıyor
-
+"
 
 -Dostum söyle bir şey yapman mümkü mü.
 
-Ben quick normal powerdan birini seçeceğim. Player avatarı ile Enemy avatarı yukarı asagı hareket ederek aynı Y ekseninde hizalanınca yani ortada. ikisi birbirine dogru hızlanacak ve ortada carpısacak. Böylece hit outputunu vericez. Tam orda damage atılacak. Ne dersin
+Ben quick normal powerdan birini seçeceğim. Player avatarı ile Enemy avatarı yukarı asagı hareket ederek a"ynı Y ekseninde hizalanınca yani ortada. ikisi birbirine dogru hızlanacak ve ortada carpısacak. Böylece hit outputunu vericez. Tam orda damage atılacak. Ne dersin
 
 -perhance enemy avatar seed: (seed:::876714083)
 Enemy Avatar Prompt:
-Square portrait illustration of a dark fantasy enemy inside a thick decorative frame. Extremely dramatic lighting focusing on the face and upper shoulders. The character is centered, looking directly at the viewer with an intimidating and hostile expression. Rough painterly shading with bold shapes instead of fine detail. The background is abstract darkness with hints of dust and crimson light. Visible texture like worn fresco art. Color palette: charcoal black, clay brown, tarnished gold, subtle crimson accents.
+Square portrait illustration of a dark fantasy enemy inside a thic"k decorative frame. Extremely dramatic lighting focusing on the face and upper shoulders. The character is centered, looking directly at the viewer with an intimidating and hostile expression. Rough painterly shading with bold shapes instead of fine detail. The background is abstract darkness with hints of dust and crimson light. Visible texture like worn fresco art. Color palette: charcoal black, clay brown, tarnished gold, subtle crimson accents.
 
 A skeletal knight with hollow glowing eyes, wearing a rust-corroded half-breastplate fused to bones, fragmented broken pauldrons, and strips of chainmail barely holding together across the torso.
 
@@ -36,5 +35,13 @@ UISafe framing: allow room around the head so the whole portrait fits inside a s
 -perhance intro image seed : (seed:::968873840)
 
 
+
+
+
+BUFF FİKİRLERİ.
 -Her 7. vurus 100% kritik vurur buff
--
+-Raunda her zaman ilk başla
+
+
+BUGS
+bazen düsman 2 defa oynuyıor. Dot varsa biz de oda 2 defa cakıyor

@@ -178,12 +178,17 @@ function computeDamage(baseMin, baseMax, itemLevel, scale, rarityMult) {
 }
 
 function determineMinShopLevel(avg) {
-  if (avg <= 7) return 1;
-  if (avg <= 11) return 2;
-  if (avg <= 15) return 3;
-  if (avg <= 19) return 4;
-  if (avg <= 24) return 5;
-  return 6;
+  // Eski tasarım 1–6 arasında bucket veriyordu; bunu daha geniş bir
+  // level skalasına yaymak için önce bucket'ı hesaplayıp sonra
+  // 1..6 -> 1,4,7,10,13,16 şeklinde map ediyoruz.
+  let bucket;
+  if (avg <= 7) bucket = 1;
+  else if (avg <= 11) bucket = 2;
+  else if (avg <= 15) bucket = 3;
+  else if (avg <= 19) bucket = 4;
+  else if (avg <= 24) bucket = 5;
+  else bucket = 6;
+  return 3 * (bucket - 1) + 1; // 1->1, 2->4, 3->7, 4->10, 5->13, 6->16
 }
 
 function buildName(baseType, rarityKey, statMods) {

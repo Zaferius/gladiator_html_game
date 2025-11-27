@@ -6,6 +6,8 @@ const AVATARS = ['🗿', '🦁', '💀', '👺'];
 
 // How many fights (win or loss) before shops fully refresh
 const SHOP_REFRESH_INTERVAL = 10;
+// How many fights before potion shop stock refreshes
+const POTION_REFRESH_INTERVAL = 5;
 
 // In-game portrait images for combat
 const PLAYER_AVATAR_IMG = 'assets/images/ingame-avatars/player.png';
@@ -59,6 +61,17 @@ const INTRO_SCRIPT = {
 const SAVE_KEY = 'arenaV7_saves';
 const ARMOR_SLOTS = ['head','neck','shoulders','chest','arms','shield','thighs','shins'];
 const TRINKET_SLOTS = ['trinket1', 'trinket2'];
+// Fixed potion definitions used by the potion shop (prices scale with player level)
+const POTION_DEFS = [
+    { key: 'hp_25',    type: 'potion', subType: 'hp',    percent: 25,  name: 'Health Potion (25%)',  priceFactor: 4 },
+    { key: 'hp_50',    type: 'potion', subType: 'hp',    percent: 50,  name: 'Health Potion (50%)',  priceFactor: 7 },
+    { key: 'hp_75',    type: 'potion', subType: 'hp',    percent: 75,  name: 'Health Potion (75%)',  priceFactor: 11 },
+    { key: 'hp_100',   type: 'potion', subType: 'hp',    percent: 100, name: 'Health Potion (100%)', priceFactor: 15 },
+    { key: 'arm_25',   type: 'potion', subType: 'armor', percent: 25,  name: 'Armor Potion (25%)',   priceFactor: 3 },
+    { key: 'arm_50',   type: 'potion', subType: 'armor', percent: 50,  name: 'Armor Potion (50%)',   priceFactor: 6 },
+    { key: 'arm_75',   type: 'potion', subType: 'armor', percent: 75,  name: 'Armor Potion (75%)',   priceFactor: 9 },
+    { key: 'arm_100',  type: 'potion', subType: 'armor', percent: 100, name: 'Armor Potion (100%)',  priceFactor: 12 },
+];
 const BASE_STATS = {
     Warrior:  { str: 1, atk: 1, def: 1, vit: 1, mag: 1, chr: 1 },
     Beserker: { str: 1, atk: 1, def: 1, vit: 1, mag: 1, chr: 1 },
@@ -219,6 +232,8 @@ class Player {
         ARMOR_SLOTS.forEach(s => this.gear[s] = null);
         TRINKET_SLOTS.forEach(s => this.gear[s] = null);
         this.wins = 0; this.pts = 0;
+        // Combat potion slots: 3 configurable slots used per fight
+        this.potionSlots = [null, null, null];
     }
     // --- Class passives + gear stat mods helpers ---
     getGearStatBonus(key) {
@@ -276,7 +291,8 @@ class Player {
         const extraLvl = Math.max(0, lvl - 1);
         const base = 12 + (extraVit * 4) + (extraLvl * 6);
         const hp = Math.floor(base * this.getHpMultiplier());
-        return Math.max(12, hp);
+        // Daha agresif progression için toplam HP'yi 3x ölçekle
+        return Math.max(12, hp * 3);
     }
     getRegen() { return Math.floor(this.getEffectiveVit() / 2); }
     getTotalArmor() {
@@ -318,11 +334,15 @@ class Player {
 
 const game = {
     player: null, selectedAvatar: 0, shopStock: { weapon: [], armor: [], trinket: [] }, shopSortOrder: 'desc', shopSortKey: 'price', currentShopType: 'weapon', codexFilter: 'weapon',
+    // Potion shop state
+    potionStock: {},
     saveSlots: [], lastSlot: -1, currentSlotIndex: -1,
     // total fights played (win or loss)
     shopFightCount: 0,
     // fight counter value when shop was last regenerated
     lastShopFightReset: 0,
+    // fight counter value when potion shop was last regenerated
+    lastPotionFightReset: 0,
 
     selectAvatar(idx) { this.selectedAvatar = idx; document.querySelectorAll('.avatar-option').forEach((el, i) => el.classList.toggle('selected', i === idx)); },
     // --- SAVE SYSTEM HELPERS (MULTI-SLOT, MAX 5) ---
@@ -416,150 +436,146 @@ const game = {
         this.shopStock.weapon = [];
         this.shopStock.armor = [];
         this.shopStock.trinket = [];
-        const lvl = this.player.level;
+        const lvl = this.player.level || 1;
+
+        // Global legendary cap and duplicate tracking across the whole shop
         const legendaryCap = 2;
         let legendaryCount = 0;
-        const usedWeaponKeys = new Set();
-        for(let i=0; i<20; i++) {
-            let tries = 0;
-            let w = null;
-            while (tries < 10) {
-                w = ItemSystem.createWeapon(lvl);
-                if (!w) break;
-                if (w.rarityKey === 'legendary' && legendaryCount >= legendaryCap) {
-                    tries++;
-                    continue;
-                }
-                if (!usedWeaponKeys.has(w.key)) break;
-                tries++;
-            }
-            if (w) {
-                usedWeaponKeys.add(w.key);
-                if (w.rarityKey === 'legendary') legendaryCount++;
-                this.shopStock.weapon.push(w);
-            }
-        }
-        const usedArmorKeys = new Set();
-        for(let i=0; i<20; i++) {
-            let tries = 0;
-            let a = null;
-            while (tries < 10) {
-                a = ItemSystem.createArmor(lvl);
-                if (!a) break;
-                if (a.rarityKey === 'legendary' && legendaryCount >= legendaryCap) {
-                    tries++;
-                    continue;
-                }
-                if (!usedArmorKeys.has(a.key)) break;
-                tries++;
-            }
-            if (a) {
-                usedArmorKeys.add(a.key);
-                if (a.rarityKey === 'legendary') legendaryCount++;
-                this.shopStock.armor.push(a);
-            }
-        }
-        const usedTrinketKeys = new Set();
-        for(let i=0; i<20; i++) {
-            let tries = 0;
-            let t = null;
-            while (tries < 10) {
-                t = ItemSystem.createTrinket(lvl);
-                if (!t) break;
-                if (t.rarityKey === 'legendary' && legendaryCount >= legendaryCap) {
-                    tries++;
-                    continue;
-                }
-                if (!usedTrinketKeys.has(t.key)) break;
-                tries++;
-            }
-            if (t) {
-                usedTrinketKeys.add(t.key);
-                if (t.rarityKey === 'legendary') legendaryCount++;
-                this.shopStock.trinket.push(t);
-            }
-        }
+        const countsByKey = Object.create(null);
 
-        // Guarantee that there are always at least 6 items the player can actually equip
-        // (required level <= player level) across all shop categories.
         const getItemMinLevel = (item) => {
             if (!item) return 1;
             if (typeof item.minLevel === 'number') return item.minLevel;
             if (typeof item.minShopLevel === 'number') return item.minShopLevel;
             return 1;
         };
-        const ensureAffordableItems = () => {
-            const target = 6;
-            const allSlots = [];
-            this.shopStock.weapon.forEach((it, idx) => {
-                allSlots.push({ type: 'weapon', index: idx, item: it, minLvl: getItemMinLevel(it) });
-            });
-            this.shopStock.armor.forEach((it, idx) => {
-                allSlots.push({ type: 'armor', index: idx, item: it, minLvl: getItemMinLevel(it) });
-            });
-            this.shopStock.trinket.forEach((it, idx) => {
-                allSlots.push({ type: 'trinket', index: idx, item: it, minLvl: getItemMinLevel(it) });
-            });
 
-            const countAffordable = () => allSlots.filter(s => s.minLvl <= lvl).length;
-            let affordable = countAffordable();
+        const canUseItem = (item) => {
+            if (!item) return false;
+            const key = item.key || item.id;
+            if (!key) return true;
+            const used = countsByKey[key] || 0;
+            if (used >= 2) return false; // en fazla 2 kopya
+            if (item.rarityKey === 'legendary' && legendaryCount >= legendaryCap) return false;
+            return true;
+        };
+
+        const registerItem = (bucket, item) => {
+            const key = item.key || item.id;
+            if (key) countsByKey[key] = (countsByKey[key] || 0) + 1;
+            if (item.rarityKey === 'legendary') legendaryCount++;
+            // Katalog item'ından shop instance'ı üret
+            const inst = { ...item, id: Date.now() + Math.random() };
+            bucket.push(inst);
+        };
+
+        const pickRandomFromPool = (pool, bucket) => {
+            if (!pool || !pool.length) return false;
+            const maxTries = pool.length * 3;
+            for (let i = 0; i < maxTries; i++) {
+                const idx = Math.floor(Math.random() * pool.length);
+                const cand = pool[idx];
+                if (!canUseItem(cand)) continue;
+                registerItem(bucket, cand);
+                return true;
+            }
+            return false;
+        };
+
+        const fillFromPools = (bucket, targetCount, pools) => {
+            let remaining = targetCount;
             let safety = 0;
-            while (affordable < target && safety < 30) {
+            while (remaining > 0 && safety < 1000) {
                 safety++;
-                const over = allSlots.filter(s => s.minLvl > lvl);
-                if (!over.length) break;
-                over.sort((a, b) => b.minLvl - a.minLvl);
-                const slot = over[0];
-
-                const usedSet = (slot.type === 'weapon') ? usedWeaponKeys
-                               : (slot.type === 'armor') ? usedArmorKeys
-                               : usedTrinketKeys;
-
-                let replacement = null;
-                let tries = 0;
-                while (tries < 15) {
-                    let cand = null;
-                    if (slot.type === 'weapon') cand = ItemSystem.createWeapon(lvl);
-                    else if (slot.type === 'armor') cand = ItemSystem.createArmor(lvl);
-                    else cand = ItemSystem.createTrinket(lvl);
-                    if (!cand) break;
-                    const candLvl = getItemMinLevel(cand);
-                    if (candLvl > lvl) { tries++; continue; }
-                    if (cand.rarityKey === 'legendary' && legendaryCount >= legendaryCap) {
-                        tries++;
-                        continue;
+                let placed = false;
+                for (let i = 0; i < pools.length && !placed; i++) {
+                    const pool = pools[i];
+                    if (!pool || !pool.length) continue;
+                    if (pickRandomFromPool(pool, bucket)) {
+                        remaining--;
+                        placed = true;
                     }
-                    if (usedSet.has(cand.key)) {
-                        tries++;
-                        continue;
-                    }
-                    replacement = cand;
-                    break;
                 }
-                if (!replacement) break;
-
-                const prev = slot.item;
-                if (prev) {
-                    const prevLvl = getItemMinLevel(prev);
-                    if (prev.rarityKey === 'legendary') legendaryCount--;
-                    if (prev.key && usedSet.has(prev.key)) usedSet.delete(prev.key);
-                    slot.minLvl = prevLvl;
-                }
-
-                usedSet.add(replacement.key);
-                if (replacement.rarityKey === 'legendary') legendaryCount++;
-
-                slot.item = replacement;
-                slot.minLvl = getItemMinLevel(replacement);
-                if (slot.type === 'weapon') this.shopStock.weapon[slot.index] = replacement;
-                else if (slot.type === 'armor') this.shopStock.armor[slot.index] = replacement;
-                else this.shopStock.trinket[slot.index] = replacement;
-
-                affordable = countAffordable();
+                if (!placed) break;
             }
         };
-        ensureAffordableItems();
 
+        const generateForCatalog = (catalog) => {
+            const bucket = [];
+            if (!Array.isArray(catalog) || catalog.length === 0) return bucket;
+
+            const maxAllowedLevel = lvl + 5;
+            const withinCap = catalog.filter(it => getItemMinLevel(it) <= maxAllowedLevel);
+            const sourceAll = withinCap.length ? withinCap : catalog;
+
+            const pickRandomBase = (pool) => {
+                if (!pool || !pool.length) return null;
+                const maxTries = pool.length * 3;
+                for (let i = 0; i < maxTries; i++) {
+                    const cand = pool[Math.floor(Math.random() * pool.length)];
+                    if (!canUseItem(cand)) continue;
+                    return cand;
+                }
+                return null;
+            };
+
+            const pushInstanceWithLevel = (base, reqLvl) => {
+                if (!base) return false;
+                // Katalog item'ını kopyala ve bu shop instance'ına requiredLevel yaz
+                const inst = { ...base, id: Date.now() + Math.random() };
+                if (typeof inst.minLevel === 'number') inst.minLevel = reqLvl;
+                else inst.minShopLevel = reqLvl;
+                registerItem(bucket, inst);
+                return true;
+            };
+
+            // 1) 6 adet tam player level'inde item
+            let created = 0;
+            let safety = 0;
+            while (created < 6 && safety < 200) {
+                safety++;
+                const base = pickRandomBase(sourceAll);
+                if (!base) break;
+                if (pushInstanceWithLevel(base, lvl)) created++;
+            }
+
+            // 2) 4 adet düşük level item (< lvl), her biri için ayrı random level
+            if (lvl > 1) {
+                for (let i = 0; i < 4; i++) {
+                    let innerSafety = 0;
+                    while (innerSafety < 100) {
+                        innerSafety++;
+                        const lowLvl = rng(1, Math.max(1, lvl - 1));
+                        const pool = sourceAll.filter(it => getItemMinLevel(it) <= maxAllowedLevel);
+                        const base = pickRandomBase(pool);
+                        if (!base) break;
+                        if (pushInstanceWithLevel(base, lowLvl)) break;
+                    }
+                }
+            }
+
+            // 3) 10 adet yüksek level item (> lvl, en fazla lvl+5), her biri için ayrı random level
+            for (let i = 0; i < 10; i++) {
+                let innerSafety = 0;
+                while (innerSafety < 100) {
+                    innerSafety++;
+                    const hiLvl = rng(lvl + 1, lvl + 5);
+                    const pool = sourceAll;
+                    const base = pickRandomBase(pool);
+                    if (!base) break;
+                    if (pushInstanceWithLevel(base, hiLvl)) break;
+                }
+            }
+
+            return bucket;
+        };
+
+        // Kataloglardan level kurallarına uygun shop listelerini üret
+        this.shopStock.weapon = generateForCatalog(typeof WEAPONS !== 'undefined' ? WEAPONS : []);
+        this.shopStock.armor = generateForCatalog(typeof ARMORS !== 'undefined' ? ARMORS : []);
+        this.shopStock.trinket = generateForCatalog(typeof TRINKETS !== 'undefined' ? TRINKETS : []);
+
+        // Varsayılan olarak kategori içi sıralamayı koru
         this.sortShop(this.shopStock.weapon);
         this.sortShop(this.shopStock.armor);
         this.sortShop(this.shopStock.trinket);
@@ -575,6 +591,31 @@ const game = {
         if (remaining < 0) remaining = 0;
         const label = remaining === 1 ? 'fight' : 'fights';
         el.innerHTML = `Shop refreshes in <span class="shop-refresh-count">${remaining}</span> ${label}`;
+    },
+    generatePotionStock() {
+        if (!this.player) return;
+        const lvl = this.player.level || 1;
+        this.potionStock = {};
+        POTION_DEFS.forEach(def => {
+            const qty = rng(1, 10);
+            const price = def.priceFactor * lvl;
+            this.potionStock[def.key] = {
+                key: def.key,
+                qty,
+                price,
+                tpl: { ...def }
+            };
+        });
+        this.lastPotionFightReset = this.shopFightCount;
+    },
+    updatePotionRefreshIndicator() {
+        const el = $('shop-refresh-indicator');
+        if (!el) return;
+        const fightsSince = this.shopFightCount - this.lastPotionFightReset;
+        let remaining = POTION_REFRESH_INTERVAL - fightsSince;
+        if (remaining < 0) remaining = 0;
+        const label = remaining === 1 ? 'fight' : 'fights';
+        el.innerHTML = `Potions refresh in <span class="shop-refresh-count">${remaining}</span> ${label}`;
     },
     addTestGold(amount = 100) {
         if(!this.player) return;
@@ -659,6 +700,12 @@ const game = {
             this.shopSortOrder = 'desc';
         }
         const mode = this.currentListMode || 'shop';
+        // Potion shop: sort potionStock entries and re-render potion shop
+        if (mode === 'potion') {
+            this.renderPotionShop();
+            if (this.player) $('shop-gold').innerText = this.player.gold;
+            return;
+        }
         if (mode === 'shop') {
             const type = this.currentShopType || 'weapon';
             let list;
@@ -819,7 +866,9 @@ const game = {
     },
     updateHubUI() {
         const p = this.player;
-        $('ui-name').innerText = p.name; $('ui-lvl').innerText = p.level; $('ui-gold').innerText = p.gold; $('ui-avatar').innerText = p.avatar;
+        $('ui-name').innerText = p.name; $('ui-lvl').innerText = p.level; $('ui-gold').innerText = p.gold;
+        const avatarImg = $('ui-avatar');
+        if (avatarImg) avatarImg.src = PLAYER_AVATAR_IMG;
         // Hub XP bar under level label
         const xpNow = typeof p.xp === 'number' ? p.xp : 0;
         const xpMax = typeof p.xpMax === 'number' && p.xpMax > 0 ? p.xpMax : 100;
@@ -952,9 +1001,22 @@ const game = {
                 const lines = [];
                 lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="${trinket.rarity}">${trinket.name}</div>`);
                 if (trinket.baseType) lines.push(`<div><span class="text-blue">Type:</span> ${trinket.baseType}</div>`);
+
+                // İnsan okunur stat satırları (+1 Strength, +2 Attack, ...)
                 if (trinket.statMods) {
+                    const statCfg = {
+                        str: { label: 'Strength', cls: 'text-orange' },
+                        atk: { label: 'Attack',   cls: 'text-red' },
+                        def: { label: 'Defence',  cls: 'text-blue' },
+                        vit: { label: 'Vitality', cls: 'text-green' },
+                        mag: { label: 'Magicka',  cls: 'text-purple' },
+                        chr: { label: 'Charisma', cls: 'text-gold' }
+                    };
                     Object.entries(trinket.statMods).forEach(([k,v]) => {
-                        lines.push(`<div><span class="text-gold">${k.toUpperCase()}:</span> ${v >= 0 ? '+' : ''}${v}</div>`);
+                        if (!v) return; // 0 statları gösterme
+                        const cfg = statCfg[k] || { label: k.toUpperCase(), cls: 'text-gold' };
+                        const sign = v > 0 ? '+' : '';
+                        lines.push(`<div class="${cfg.cls}">${sign}${v} ${cfg.label}</div>`);
                     });
                 }
                 if (typeof trinket.goldBonus === 'number') {
@@ -963,8 +1025,16 @@ const game = {
                 if (typeof trinket.xpBonus === 'number') {
                     lines.push(`<div><span class="text-purple">XP Bonus:</span> +${Math.round(trinket.xpBonus*100)}%</div>`);
                 }
-                const rarityLabel = rarityText || 'unknown';
-                lines.push(`<div style="margin-top:6px; font-size:0.8rem; color:#aaa;">Rarity: ${rarityLabel}</div>`);
+                const rarityLabel = rarityText || 'common';
+                const minLvl = (typeof trinket.minLevel === 'number')
+                    ? trinket.minLevel
+                    : (typeof trinket.minShopLevel === 'number' ? trinket.minShopLevel : 1);
+                lines.push(`
+                    <div style="margin-top:6px; font-size:0.8rem; color:#aaa; display:flex; justify-content:space-between; align-items:center;">
+                        <span>Rarity: ${rarityLabel}</span>
+                        <span class="text-gold" style="font-size:0.95rem;">Lvl ${minLvl}</span>
+                    </div>
+                `);
                 if (trinket.info) {
                     const infoClass = trinket.infoColor || 'text-gold';
                     lines.push(`<div class="${infoClass}" style="margin-top:4px; font-size:0.8rem; font-style:italic;">${trinket.info}</div>`);
@@ -1037,6 +1107,22 @@ const game = {
         this.sortShop(list);
         $('screen-hub').classList.add('hidden'); $('screen-list').classList.remove('hidden');
         this.renderList(list, 'shop'); $('shop-gold').innerText = this.player.gold;
+        // Normal shop açıldığında standart shop refresh bilgisini göster
+        this.updateShopRefreshIndicator();
+        wireButtonSfx($('screen-list'));
+    },
+    openPotionShop() {
+        if (!this.player) return;
+        // Track that we're in potion shop mode so sorting works on the correct list
+        this.currentListMode = 'potion';
+        // Refresh potion stock if needed or if empty
+        if ((this.shopFightCount - this.lastPotionFightReset) >= POTION_REFRESH_INTERVAL || !this.potionStock || Object.keys(this.potionStock).length === 0) {
+            this.generatePotionStock();
+        }
+        $('screen-hub').classList.add('hidden'); $('screen-list').classList.remove('hidden');
+        this.renderPotionShop();
+        $('shop-gold').innerText = this.player.gold;
+        this.updatePotionRefreshIndicator();
         wireButtonSfx($('screen-list'));
     },
     openInventory() {
@@ -1221,6 +1307,10 @@ const game = {
             previewBox.style.left = x + 'px';
             previewBox.style.top = y + 'px';
         };
+
+        // Expose universal tooltip helpers so other parts (potion shop, slots) reuse exactly the same behavior
+        this._buildItemPreview = buildPreviewFromItem;
+        this._moveItemPreview = movePreview;
         pool.forEach(item => {
             const row = document.createElement('div');
             row.className = 'item-row';
@@ -1249,6 +1339,149 @@ const game = {
                 };
                 row.onmouseleave = () => {
                     previewBox.classList.remove('visible');
+                };
+            }
+            cont.appendChild(row);
+        });
+    },
+    renderPotionShop() {
+        const cont = $('list-container');
+        const titleEl = $('list-title');
+        const headerExtra = $('list-header-extra');
+        if (!cont || !titleEl) return;
+        titleEl.innerText = 'POTION SHOP';
+        if (headerExtra) headerExtra.innerHTML = '';
+        cont.innerHTML = '';
+
+        // Potion shop açıkken inventory'ye özel potion slot kartını gizle
+        const slotCard = $('inv-potion-slots-card');
+        if (slotCard) {
+            slotCard.classList.add('hidden');
+            slotCard.innerHTML = '';
+        }
+
+        if (!this.potionStock || Object.keys(this.potionStock).length === 0) {
+            cont.innerHTML = '<div style="text-align:center; padding:20px; color:#555;">No potions available.</div>';
+            return;
+        }
+
+        const previewBox = $('shop-preview');
+        const previewBody = $('shop-preview-body');
+        const movePreview = (ev) => {
+            if (!previewBox) return;
+            const rect = $('game-container').getBoundingClientRect();
+            const offsetX = 28, offsetY = 25;
+            let x = ev.clientX - rect.left + offsetX;
+            let y = ev.clientY - rect.top + offsetY;
+            const maxX = rect.width - 340;
+            const maxY = rect.height - 160;
+            x = Math.max(10, Math.min(maxX, x));
+            y = Math.max(10, Math.min(maxY, y));
+            previewBox.style.left = x + 'px';
+            previewBox.style.top = y + 'px';
+        };
+
+        // Sort potion entries according to current shopSortKey/shopSortOrder
+        const dir = this.shopSortOrder === 'desc' ? -1 : 1;
+        const entries = Object.values(this.potionStock).sort((a, b) => {
+            const pa = a.price ?? 0;
+            const pb = b.price ?? 0;
+            const ta = (a.tpl && a.tpl.subType) || '';
+            const tb = (b.tpl && b.tpl.subType) || '';
+            const la = (a.tpl && a.tpl.percent) || 0;
+            const lb = (b.tpl && b.tpl.percent) || 0;
+            let av, bv;
+            if (this.shopSortKey === 'price') {
+                av = pa; bv = pb;
+            } else if (this.shopSortKey === 'type') {
+                // hp vs armor
+                av = ta; bv = tb;
+            } else if (this.shopSortKey === 'level') {
+                // use potion strength as a pseudo-level for sorting
+                av = la; bv = lb;
+            } else {
+                // rarity or unknown: all potions are common, fall back to name
+                av = (a.tpl && a.tpl.name) || '';
+                bv = (b.tpl && b.tpl.name) || '';
+            }
+            if (av === bv) return 0;
+            return av < bv ? -1 * dir : 1 * dir;
+        });
+
+        entries.forEach(entry => {
+            const { tpl, qty, price } = entry;
+            const row = document.createElement('div');
+            row.className = 'item-row';
+            const typeLabel = tpl.subType === 'hp' ? 'Health' : 'Armor';
+            const percentText = `${tpl.percent}%`;
+            const disabled = qty <= 0 || this.player.gold < price;
+            const btnState = disabled ? 'disabled' : '';
+            row.innerHTML = `
+                <div class="rarity-common">${tpl.name} <span class="potion-stock-count">x ${qty}</span></div>
+                <div style="font-size:0.8rem;">Potion</div>
+                <div style="font-size:0.8rem; color:#ccc;">${typeLabel}</div>
+                <div style="font-size:0.8rem; color:#ccc;">${percentText}</div>
+                <div class="text-gold">${price}</div>
+                <button class="btn btn-buy" style="padding:5px 10px; font-size:0.8rem;" ${btnState}>Buy</button>
+            `;
+            // Tooltip for potions in the potion shop – same layout as universal potion tooltip
+            if (previewBox && previewBody) {
+                row.onmouseenter = (ev) => {
+                    const typeLabel = tpl.subType === 'armor' ? 'Armor' : 'Health';
+                    const pct = tpl.percent || 0;
+                    const rarityText = 'common';
+                    const minLvl = 1;
+                    const lines = [];
+                    lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="rarity-common">${tpl.name}</div>`);
+                    lines.push(`<div><span class="text-green">Type:</span> Potion</div>`);
+                    lines.push(`<div><span class="text-blue">Effect:</span> Restore ${pct}% ${typeLabel}</div>`);
+                    lines.push(`
+                        <div style="margin-top:6px; font-size:0.8rem; color:#aaa; display:flex; justify-content:space-between; align-items:center;">
+                            <span>Rarity: ${rarityText}</span>
+                            <span class="text-gold" style="font-size:0.95rem;">Lvl ${minLvl}</span>
+                        </div>
+                    `);
+                    previewBody.innerHTML = lines.join('');
+                    movePreview(ev);
+                    previewBox.classList.remove('hidden');
+                    previewBox.classList.add('visible');
+                };
+                row.onmousemove = (ev) => {
+                    if (previewBox.classList.contains('visible')) movePreview(ev);
+                };
+                row.onmouseleave = () => {
+                    previewBox.classList.remove('visible');
+                };
+            }
+            const btn = row.querySelector('button');
+            if (btn && !disabled) {
+                btn.onclick = () => {
+                    if (entry.qty <= 0 || this.player.gold < entry.price) return;
+                    this.player.gold -= entry.price;
+                    entry.qty -= 1;
+                    // Stack potions in inventory instead of creating separate rows
+                    if (!Array.isArray(this.player.inventory)) this.player.inventory = [];
+                    const inv = this.player.inventory;
+                    const existing = inv.find(it => it && it.type === 'potion' && it.subType === tpl.subType && it.percent === tpl.percent && it.name === tpl.name);
+                    if (existing) {
+                        existing.qty = (existing.qty || 1) + 1;
+                    } else {
+                        const item = {
+                            id: Date.now() + Math.random(),
+                            type: 'potion',
+                            subType: tpl.subType,
+                            percent: tpl.percent,
+                            name: tpl.name,
+                            price: entry.price,
+                            qty: 1,
+                            rarity: 'rarity-common'
+                        };
+                        inv.push(item);
+                    }
+                    // Re-render potion shop row / list
+                    this.renderPotionShop();
+                    $('shop-gold').innerText = this.player.gold;
+                    this.updateHubUI();
                 };
             }
             cont.appendChild(row);
@@ -1290,7 +1523,10 @@ const game = {
             f.appendChild(makeBtn('weapon', 'Weapons'));
             f.appendChild(makeBtn('armor', 'Armors'));
             f.appendChild(makeBtn('trinket', 'Trinkets'));
-            if (header) header.appendChild(f);
+            f.appendChild(makeBtn('potion', 'Potions'));
+            if (header) {
+                header.appendChild(f);
+            }
         }
 
         const previewBox = $('shop-preview');
@@ -1348,7 +1584,7 @@ const game = {
         const buildPreviewFromItem = (item) => {
             if (!item || !previewBody) return;
             const rarityText = (item.rarity || '').replace('rarity-','');
-            const minLvl = getItemMinLevel(item);
+            const minLvl = (item.type === 'potion') ? 1 : getItemMinLevel(item);
             let lines = [];
             // Title (name)
             lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="${item.rarity}">${item.name}</div>`);
@@ -1374,6 +1610,11 @@ const game = {
                 if (item.slot) lines.push(`<div><span class="text-blue">Slot:</span> ${item.slot}</div>`);
             } else if (item.type === 'trinket') {
                 if (item.baseType) lines.push(`<div><span class="text-blue">Type:</span> ${item.baseType}</div>`);
+            } else if (item.type === 'potion') {
+                const typeLabel = item.subType === 'armor' ? 'Armor' : 'Health';
+                const pct = item.percent || 0;
+                lines.push(`<div><span class="text-green">Type:</span> Potion</div>`);
+                lines.push(`<div><span class="text-blue">Effect:</span> Restore ${pct}% ${typeLabel}</div>`);
             }
             // Stat buffs / debuffs from statMods
             if (item.statMods) {
@@ -1503,7 +1744,8 @@ const game = {
         }
 
         if(listItems.length === 0 && cont.children.length === 0) {
-            cont.innerHTML = '<div style="text-align:center; padding:20px; color:#555;">Empty</div>'; return; }
+            cont.innerHTML = '<div style="text-align:center; padding:20px; color:#555;">Empty</div>';
+        }
 
         listItems.forEach((item, idx) => {
             const div = document.createElement('div'); div.className = 'item-row';
@@ -1524,6 +1766,9 @@ const game = {
             } else if (item.type === 'trinket') {
                 // Trinketlerde düz stat gösterimi yok, tooltipten okunacak
                 statDisplay = 'Trinket';
+            } else if (item.type === 'potion') {
+                const typeLabel = item.subType === 'armor' ? 'Armor' : 'HP';
+                statDisplay = `${typeLabel} ${item.percent || 0}%`;
             }
 
             const cls = item.type === 'weapon' ? (item.weaponClass || '').toLowerCase() : '';
@@ -1538,7 +1783,15 @@ const game = {
             } else {
                 nameHtml = `${item.name}`;
             }
-            const btnTxt = mode === 'shop' ? `Buy` : 'Equip';
+            // Potions: show stack count as "Name x N" in inventory, with glowing counter
+            if (mode === 'inv' && item.type === 'potion') {
+                const qty = item.qty || 1;
+                nameHtml = `${item.name} <span class="potion-stock-count">x ${qty}</span>`;
+            }
+            let btnTxt;
+            if (mode === 'shop') btnTxt = 'Buy';
+            else if (item.type === 'potion') btnTxt = 'Equip';
+            else btnTxt = 'Equip';
             const priceTxt = mode === 'shop' ? `${item.price}` : '-';
             let btnState = "";
             if (mode === 'shop') {
@@ -1602,13 +1855,134 @@ const game = {
                         this.updateHubUI();
                     }
                 } else {
-                    this.player.equip(item);
-                    this.renderList(this.player.inventory, mode);
-                    this.updateHubUI();
+                    // Inventory actions
+                    if (item.type === 'potion') {
+                        if (!this.player) return;
+                        if (!Array.isArray(this.player.potionSlots)) {
+                            this.player.potionSlots = [null, null, null];
+                        }
+                        const slots = this.player.potionSlots;
+                        const freeIndex = slots.findIndex(s => !s);
+                        if (freeIndex === -1) {
+                            alert('All potion slots are filled.');
+                            return;
+                        }
+
+                        // Sadece konfigurasyon: tip/percent/name bilgisini slota yaz
+                        slots[freeIndex] = {
+                            subType: item.subType,
+                            percent: item.percent,
+                            name: item.name
+                        };
+
+                        this.renderList(this.player.inventory, mode);
+                    } else {
+                        this.player.equip(item);
+                        this.renderList(this.player.inventory, mode);
+                        this.updateHubUI();
+                    }
                 }
             };
             cont.appendChild(div);
         });
+
+        // Inventory-specific: fill external Potion Slots card (bottom-left of screen-list)
+        const slotCard = $('inv-potion-slots-card');
+        if (slotCard) {
+            if (mode !== 'inv') {
+                slotCard.classList.add('hidden');
+                slotCard.innerHTML = '';
+            } else {
+                slotCard.classList.remove('hidden');
+                slotCard.innerHTML = '';
+
+                const title = document.createElement('div');
+                title.textContent = 'Potion Slots';
+                title.className = 'potion-card-title';
+                slotCard.appendChild(title);
+
+                const slotsArr = (this.player && Array.isArray(this.player.potionSlots)) ? this.player.potionSlots : [null, null, null];
+                const makeSlotRow = (idx) => {
+                    const row = document.createElement('div');
+                    row.className = 'potion-card-row';
+
+                    const info = document.createElement('div');
+                    const slot = slotsArr[idx] || null;
+                    let label = `Slot ${idx+1}`;
+                    let detail = '';
+                    if (!slot) {
+                        detail = 'Empty';
+                    } else {
+                        const typeLabel = slot.subType === 'armor' ? 'Armor' : 'HP';
+                        detail = `${typeLabel} ${slot.percent || 0}%`;
+                    }
+                    info.innerHTML = `<div class="potion-card-slot-label">${label}</div><div class="potion-card-slot-detail">${detail}</div>`;
+                    row.appendChild(info);
+
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-xs';
+                    btn.textContent = 'Clear';
+                    if (!slot) {
+                        btn.disabled = true;
+                    } else {
+                        btn.onclick = () => {
+                            if (!this.player || !Array.isArray(this.player.potionSlots)) return;
+                            // Return one charge of this potion back to inventory stack
+                            if (!Array.isArray(this.player.inventory)) this.player.inventory = [];
+                            const inv = this.player.inventory;
+                            const subType = slot.subType;
+                            const percent = slot.percent || 0;
+                            const name = slot.name || '';
+                            const existing = inv.find(it => it && it.type === 'potion' && it.subType === subType && it.percent === percent && it.name === name);
+                            if (existing) {
+                                existing.qty = (existing.qty || 1) + 1;
+                            } else {
+                                inv.push({
+                                    id: Date.now() + Math.random(),
+                                    type: 'potion',
+                                    subType,
+                                    percent,
+                                    name,
+                                    qty: 1,
+                                    rarity: 'rarity-common'
+                                });
+                            }
+                            this.player.potionSlots[idx] = null;
+                            this.renderList(this.player.inventory, 'inv');
+                        };
+                    }
+                    row.appendChild(btn);
+
+                    // Tooltip for potion slots using the global preview box
+                    if (slot && previewBox && previewBody) {
+                        row.onmouseenter = (ev) => {
+                            const fakeItem = {
+                                type: 'potion',
+                                rarity: 'rarity-common',
+                                name: slot.name || detail,
+                                subType: slot.subType,
+                                percent: slot.percent || 0
+                            };
+                            buildPreviewFromItem(fakeItem);
+                            movePreview(ev);
+                            previewBox.classList.remove('hidden');
+                            previewBox.classList.add('visible');
+                        };
+                        row.onmousemove = (ev) => {
+                            if (previewBox.classList.contains('visible')) movePreview(ev);
+                        };
+                        row.onmouseleave = () => {
+                            previewBox.classList.remove('visible');
+                        };
+                    }
+                    return row;
+                };
+
+                slotCard.appendChild(makeSlotRow(0));
+                slotCard.appendChild(makeSlotRow(1));
+                slotCard.appendChild(makeSlotRow(2));
+            }
+        }
     },
     saveGame() {
         if (!this.player) return;
@@ -1622,6 +1996,8 @@ const game = {
             _shopStock: this.shopStock,
             _shopFightCount: this.shopFightCount,
             _lastShopFightReset: this.lastShopFightReset,
+            _potionStock: this.potionStock,
+            _lastPotionFightReset: this.lastPotionFightReset,
         };
         meta.slots[this.currentSlotIndex] = slotData;
         meta.lastSlot = this.currentSlotIndex;
@@ -1644,6 +2020,14 @@ const game = {
         const avatarIdx = Math.max(0, AVATARS.indexOf(plain.avatar));
         this.player = new Player(plain.name, plain.class, avatarIdx >= 0 ? avatarIdx : 0);
         Object.assign(this.player, plain);
+
+        // Normalize potionSlots for older saves / bad data
+        if (!Array.isArray(this.player.potionSlots)) {
+            this.player.potionSlots = [null, null, null];
+        } else if (this.player.potionSlots.length !== 3) {
+            const slots = this.player.potionSlots;
+            this.player.potionSlots = [slots[0] || null, slots[1] || null, slots[2] || null];
+        }
 
         // Eski kayıtlardaki legendary silah isimlerini normalize et
         const fixLegendaryItemName = (item) => {
@@ -1675,6 +2059,13 @@ const game = {
         }
         this.shopFightCount = typeof plain._shopFightCount === 'number' ? plain._shopFightCount : 0;
         this.lastShopFightReset = typeof plain._lastShopFightReset === 'number' ? plain._lastShopFightReset : 0;
+        // Potion shop state (stok + son refresh)
+        if (plain._potionStock) {
+            this.potionStock = plain._potionStock;
+        } else {
+            this.potionStock = {};
+        }
+        this.lastPotionFightReset = typeof plain._lastPotionFightReset === 'number' ? plain._lastPotionFightReset : 0;
         // Eğer herhangi bir sebeple shop listeleri boşsa, bir kez generate et
         const hasAnyShop = (this.shopStock.weapon && this.shopStock.weapon.length) ||
             (this.shopStock.armor && this.shopStock.armor.length) ||
@@ -1971,9 +2362,11 @@ const blackjack = {
 // --- COMBAT ENGINE ---
 const combat = {
     hp: 0, maxHp: 0, armor: 0, maxArmor: 0, enemy: null, turn: 'player', actionLock: false,
+    enemyActing: false, // guard to prevent overlapping enemy turns
     playerDots: [], // active DOT effects on player
     dotResist: {},  // per-combat resistance per DOT id (0-1)
     log: [],        // recent combat log lines
+    potionSlots: [null, null, null], // active potions brought into this fight
     getEnemyMaxHp(e) {
         const vit = e.vit || 0;
         const lvl = e.lvl || 1;
@@ -1981,7 +2374,8 @@ const combat = {
         const extraLvl = Math.max(0, lvl - 1);
         const base = 12 + (extraVit * 4) + (extraLvl * 6);
         const hp = Math.floor(base * 0.9);
-        return Math.max(12, hp);
+        // Player ile tutarlı olacak şekilde düşman HP'sini de 3x ölçekle
+        return Math.max(12, hp * 3);
     },
     getEnemyDmgRange(e) {
         // Player damage: weapon.min/max + STR*2
@@ -2006,6 +2400,39 @@ const combat = {
         this.maxArmor = p.getTotalArmor(); this.armor = this.maxArmor;
         this.playerDots = [];
         this.dotResist = {};
+
+        // Prepare combat potion slots for this fight:
+        // player.potionSlots sadece konfigurasyon tutar; gerçek potlar
+        // her dövüş başında envanterden çekilir ve dövüş sonunda
+        // kullanılmayanlar envantere iade edilir.
+        this.potionSlots = [null, null, null];
+        if (p && Array.isArray(p.potionSlots)) {
+            if (!Array.isArray(p.inventory)) p.inventory = [];
+            const inv = p.inventory;
+            this.potionSlots = p.potionSlots.map(slot => {
+                if (!slot) return null;
+                const subType = slot.subType;
+                const percent = slot.percent || 0;
+                const name = slot.name || '';
+                // Envanterden uygun tipi bul ve bu dövüş icin 1 adet tüket
+                const existing = inv.find(it => it && it.type === 'potion' && it.subType === subType && (it.percent || 0) === percent && it.name === name && (it.qty || 0) > 0);
+                if (!existing) {
+                    // Bu dövüş icin stoğun yok, slot boş kalır
+                    return null;
+                }
+                existing.qty = (existing.qty || 0) - 1;
+                if (existing.qty <= 0) {
+                    const idx = inv.indexOf(existing);
+                    if (idx !== -1) inv.splice(idx, 1);
+                }
+                return {
+                    subType,
+                    percent,
+                    name,
+                    used: false
+                };
+            });
+        }
         // Yeni dövüşe girerken önceki fight'tan kalan UI izlerini temizle
         const dmgEl = $('dmg-overlay');
         if (dmgEl) {
@@ -2037,6 +2464,19 @@ const combat = {
                 ? getEnemyAvatarKey(tpl)
                 : (tpl && tpl.avatarKey ? tpl.avatarKey : (enemyName || '').toLowerCase());
             enemyAvatarEl.src = ENEMY_AVATARS[avatarKey] || '';
+        }
+
+        // Yeni dövüşte enemy death cross efektini sıfırla
+        const cross = $('enemy-death-cross');
+        if (cross) {
+            cross.classList.remove('enemy-death-cross-anim');
+            cross.style.opacity = '0';
+        }
+        // Player death cross efektini de sıfırla
+        const pCross = $('player-death-cross');
+        if (pCross) {
+            pCross.classList.remove('player-death-cross-anim');
+            pCross.style.opacity = '0';
         }
 
         // Temel enemy statları (HP formülü şimdilik eskisi gibi kalsın)
@@ -2166,6 +2606,12 @@ const combat = {
         $('ins-vit').innerText = e.vit;
         $('ins-mag').innerText = e.mag;
 
+        // Enemy için açıklama metni: player'ın özel quote'unu override et
+        const descEl = $('ins-desc');
+        if (descEl) {
+            descEl.innerText = 'A dangerous foe.';
+        }
+
         const w = e.weapon || null;
         const nameEl = $('ins-weapon-name');
         const rangeEl = $('ins-weapon-range');
@@ -2263,14 +2709,279 @@ const combat = {
             if (rangeEl) rangeEl.innerText = '-';
         }
     },
+    inspectPlayer() {
+        const p = game.player;
+        if (!p) return;
+
+        $('modal-inspect').classList.remove('hidden');
+
+        // Etkin statlar (gear + class bonuslar dahil)
+        const effStr = p.getEffectiveStr();
+        const effAtk = p.getEffectiveAtk();
+        const effDef = p.getEffectiveDef();
+        const effVit = p.getEffectiveVit();
+        const effMag = p.getEffectiveMag();
+
+        $('ins-name').innerText = p.name;
+        $('ins-lvl').innerText = p.level || 1;
+        $('ins-str').innerText = effStr;
+        $('ins-atk').innerText = effAtk;
+        $('ins-def').innerText = effDef;
+        $('ins-vit').innerText = effVit;
+        $('ins-mag').innerText = effMag;
+
+        const w = p.gear && p.gear.weapon ? p.gear.weapon : null;
+        const nameEl = $('ins-weapon-name');
+        const rangeEl = $('ins-weapon-range');
+        const descEl = $('ins-desc');
+
+        // Melee damage aralığı ve max değeri (STR bonuslu)
+        if (rangeEl) {
+            const range = p.getDmgRange();
+            const min = range.min;
+            const max = range.max;
+            rangeEl.innerText = `${min}-${max} (Max: ${max})`;
+        }
+
+        if (descEl) {
+            descEl.innerText = '"take a good look, you may never see it again..."';
+        }
+
+        if (w) {
+            if (nameEl) nameEl.innerText = w.name || (w.baseType || 'Weapon');
+
+            // Player silahı için de basit tooltip kullan
+            if (nameEl) {
+                const previewBox = $('shop-preview');
+                const previewBody = $('shop-preview-body');
+                const previewIcon = $('shop-preview-icon');
+                nameEl.onmouseenter = (ev) => {
+                    if (!previewBox || !previewBody) return;
+                    let lines = [];
+                    const rarityText = (w.rarity || '').replace('rarity-','');
+                    const minLvl = (typeof w.minLevel === 'number') ? w.minLevel : (typeof w.minShopLevel === 'number' ? w.minShopLevel : 1);
+                    lines.push(`<div style="font-size:1rem; margin-bottom:4px;" class="${w.rarity || ''}">${w.name || (w.baseType || 'Weapon')}</div>`);
+                    if (typeof w.min === 'number' && typeof w.max === 'number') {
+                        lines.push(`<div><span class="text-orange">Damage:</span> ${w.min}-${w.max}</div>`);
+                    }
+                    if (w.baseType) {
+                        lines.push(`<div><span class="text-blue">Type:</span> ${w.baseType}</div>`);
+                    }
+                    if (w.statMods) {
+                        const map = [
+                            { key: 'str', label: 'Strength', cls: 'text-orange' },
+                            { key: 'atk', label: 'Attack',   cls: 'text-red' },
+                            { key: 'def', label: 'Defence',  cls: 'text-blue' },
+                            { key: 'vit', label: 'Vitality', cls: 'text-green' },
+                            { key: 'mag', label: 'Magicka',  cls: 'text-purple' },
+                            { key: 'chr', label: 'Charisma', cls: 'text-gold' }
+                        ];
+                        const modLines = [];
+                        map.forEach(({key,label,cls}) => {
+                            const v = w.statMods[key];
+                            if (typeof v === 'number' && v !== 0) {
+                                const sign = v > 0 ? '+' : '';
+                                modLines.push(`<div class="${cls}">${sign}${v} ${label}</div>`);
+                            }
+                        });
+                        if (modLines.length) {
+                            lines.push('<div style="margin-top:6px; font-size:0.85rem;">');
+                            lines = lines.concat(modLines);
+                            lines.push('</div>');
+                        }
+                    }
+                    lines.push(`
+                        <div style="margin-top:6px; font-size:0.8rem; color:#aaa; display:flex; justify-content:space-between; align-items:center;">
+                            <span>Rarity: ${rarityText}</span>
+                            <span class="text-gold" style="font-size:0.95rem;">Lvl ${minLvl}</span>
+                        </div>
+                    `);
+                    if (w.info) {
+                        const infoClass = w.infoColor || 'text-gold';
+                        lines.push(`<div class="${infoClass}" style="margin-top:4px; font-size:0.8rem; font-style:italic;">${w.info}</div>`);
+                    }
+                    previewBody.innerHTML = lines.join('');
+                    const rect = $('game-container').getBoundingClientRect();
+                    const offsetX = 28, offsetY = 25;
+                    let x = ev.clientX - rect.left + offsetX;
+                    let y = ev.clientY - rect.top + offsetY;
+                    const maxX = rect.width - 340;
+                    const maxY = rect.height - 160;
+                    x = Math.max(10, Math.min(maxX, x));
+                    y = Math.max(10, Math.min(maxY, y));
+                    previewBox.style.left = x + 'px';
+                    previewBox.style.top = y + 'px';
+                    if (previewIcon) previewIcon.classList.add('hidden');
+                    previewBox.classList.remove('hidden');
+                    previewBox.classList.add('visible');
+                };
+                nameEl.onmousemove = (ev) => {
+                    const previewBox = $('shop-preview');
+                    if (!previewBox || !previewBox.classList.contains('visible')) return;
+                    const rect = $('game-container').getBoundingClientRect();
+                    const offsetX = 28, offsetY = 25;
+                    let x = ev.clientX - rect.left + offsetX;
+                    let y = ev.clientY - rect.top + offsetY;
+                    const maxX = rect.width - 340;
+                    const maxY = rect.height - 160;
+                    x = Math.max(10, Math.min(maxX, x));
+                    y = Math.max(10, Math.min(maxY, y));
+                    previewBox.style.left = x + 'px';
+                    previewBox.style.top = y + 'px';
+                };
+                nameEl.onmouseleave = () => {
+                    const previewBox = $('shop-preview');
+                    if (!previewBox) return;
+                    previewBox.classList.remove('visible');
+                };
+            }
+        } else {
+            if (nameEl) nameEl.innerText = 'Unarmed';
+        }
+    },
+    openBag() {
+        // Sadece oyuncu turundayken ve aksiyon kilit değilken Bag açılabilsin
+        if (this.turn !== 'player' || this.actionLock) return;
+        const modal = $('modal-bag');
+        const list = $('bag-list');
+        if (!modal || !list) return;
+
+        list.innerHTML = '';
+
+        const slots = this.potionSlots || [];
+        const hasAny = slots.some(s => s && !s.used);
+        if (!hasAny) {
+            list.innerHTML = '<p style="color:#aaa; font-size:0.9rem;">No active potions in your slots.</p>';
+        } else {
+            slots.forEach((slot, idx) => {
+                const row = document.createElement('div');
+                row.className = 'stat-row';
+                let label = `Slot ${idx + 1}: `;
+                if (!slot) {
+                    label += 'Empty';
+                } else if (slot.used) {
+                    label += 'Used';
+                } else {
+                    const typeLabel = slot.subType === 'armor' ? 'Armor' : 'HP';
+                    label += `${typeLabel} ${slot.percent || 0}%`;
+                }
+                row.innerHTML = `
+                    <span>${label}</span>
+                    <span>
+                        <button class="btn btn-xs" data-slot="${idx}">Use</button>
+                    </span>
+                `;
+                const btn = row.querySelector('button');
+                if (!slot || slot.used) {
+                    if (btn) btn.disabled = true;
+                } else if (btn) {
+                    btn.onclick = () => this.usePotionSlot(idx);
+                }
+                list.appendChild(row);
+            });
+        }
+
+        modal.classList.remove('hidden');
+    },
+    closeBag() {
+        const modal = $('modal-bag');
+        if (modal) modal.classList.add('hidden');
+    },
+    usePotionSlot(index) {
+        if (this.turn !== 'player' || this.actionLock) return;
+        if (!this.potionSlots || index < 0 || index >= this.potionSlots.length) return;
+        const slot = this.potionSlots[index];
+        if (!slot || slot.used) return;
+
+        const acts = $('combat-actions');
+        if (acts) {
+            acts.style.opacity = '0.8';
+            acts.style.pointerEvents = 'none';
+        }
+        this.actionLock = true;
+
+        const type = slot.subType === 'armor' ? 'armor' : 'hp';
+        if (type === 'hp') {
+            const pct = (slot.percent || 0) / 100;
+            const heal = Math.max(1, Math.floor(this.maxHp * pct));
+            this.hp = Math.min(this.maxHp, this.hp + heal);
+            this.showDmg(heal, 'player', 'heal');
+            this.logMessage(`You drink a health potion and heal ${heal} HP.`);
+        } else {
+            // Armor potion: eğer armor tamamen bitmişse (0 veya altı), pot boşa gider
+            if (this.armor <= 0) {
+                this.logMessage('Armor is broken!');
+            } else {
+                const pct = (slot.percent || 0) / 100;
+                const gain = Math.max(1, Math.floor(this.maxArmor * pct));
+                const before = this.armor;
+                this.armor = Math.min(this.maxArmor, this.armor + gain);
+                const actual = this.armor - before;
+                if (actual > 0) {
+                    this.logMessage(`You drink an armor potion and restore ${actual} Armor.`);
+                } else {
+                    this.logMessage('Your armor is already at maximum.');
+                }
+            }
+        }
+
+        slot.used = true;
+        this.updateUI();
+        this.closeBag();
+
+        setTimeout(() => {
+            this.setTurn('enemy');
+            this.actionLock = false;
+            if (acts) {
+                acts.style.opacity = '1';
+                acts.style.pointerEvents = 'auto';
+            }
+        }, 300);
+    },
+    returnUnusedPotions() {
+        if (!game.player || !Array.isArray(this.potionSlots)) return;
+        const p = game.player;
+        if (!Array.isArray(p.inventory)) p.inventory = [];
+        const inv = p.inventory;
+        this.potionSlots.forEach((slot) => {
+            if (!slot) return;
+            const subType = slot.subType;
+            const percent = slot.percent || 0;
+            const name = slot.name || '';
+
+            // Sadece KULLANILMAYAN slotları envantere iade et
+            if (!slot.used) {
+                const existing = inv.find(it => it && it.type === 'potion' && it.subType === subType && (it.percent || 0) === percent && it.name === name);
+                if (existing) {
+                    existing.qty = (existing.qty || 1) + 1;
+                } else {
+                    inv.push({
+                        id: Date.now() + Math.random(),
+                        type: 'potion',
+                        subType,
+                        percent,
+                        name,
+                        qty: 1,
+                        rarity: 'rarity-common'
+                    });
+                }
+            }
+        });
+
+        // Combat state için slotları sıfırla; player.potionSlots konfigurasyonu korunur
+        this.potionSlots = [null, null, null];
+    },
     updateUI() {
         const e = this.enemy;
         $('c-enemy-name').innerText = e.name; $('c-enemy-lvl').innerText = `Lvl ${e.lvl}`;
         $('c-enemy-hp').style.width = (e.hp/e.maxHp)*100 + '%'; $('c-enemy-hp-text').innerText = `${Math.max(0,e.hp)}/${e.maxHp}`;
         const enemyArmPct = e.maxArmor > 0 ? (e.armor / e.maxArmor) * 100 : 0;
         $('c-enemy-arm').style.width = enemyArmPct + '%'; $('c-enemy-arm-text').innerText = `${Math.max(0, e.armor)}/${e.maxArmor}`;
-
-        $('c-player-name').innerText = game.player.name;
+        const p = game.player;
+        const nameEl = $('c-player-name-text');
+        const lvlEl = $('c-player-lvl');
+        if (nameEl) nameEl.innerText = p.name;
+        if (lvlEl) lvlEl.innerText = `Lvl ${p.level || 1}`;
         $('c-player-hp').style.width = (this.hp/this.maxHp)*100 + '%'; $('c-player-hp-text').innerText = `${Math.max(0,this.hp)}/${this.maxHp}`;
         const armPct = this.maxArmor > 0 ? (this.armor/this.maxArmor)*100 : 0;
         $('c-player-arm').style.width = armPct + '%'; $('c-player-arm-text').innerText = `${Math.max(0,this.armor)}/${this.maxArmor}`;
@@ -2310,7 +3021,10 @@ const combat = {
 
         if(this.turn === 'player') {
             const hit = this.calcHit(game.player.stats.atk, e.def);
-            $('hit-quick').innerText = Math.min(99, hit+15) + "%"; $('hit-normal').innerText = Math.min(99, hit) + "%"; $('hit-power').innerText = Math.min(99, hit-20) + "%";
+            const q = Math.max(5, Math.min(99, hit + 15));
+            const n = Math.max(5, Math.min(99, hit));
+            const p = Math.max(5, Math.min(99, hit - 20));
+            $('hit-quick').innerText = q + "%"; $('hit-normal').innerText = n + "%"; $('hit-power').innerText = p + "%";
         }
     },
     logMessage(msg) {
@@ -2369,10 +3083,10 @@ const combat = {
         }, 220);
     },
     calcHit(atk, def) {
-        // Base hit a bit lower, ATK-DEF farkını daha sert hissettirmek için çarpanı yükselt
-        // Örn: atk=1, def=3  =>  base ≈60, quick ≈75, power ≈40
-        const base = 70 + (atk - def) * 5;
-        return Math.max(10, Math.min(99, base));
+        // Base değeri daha da düşük, ATK-DEF farkına göre hit % hesapla
+        // Alt sınır: hiçbir zaman %5'in altına düşmesin
+        const base = 55 + (atk - def) * 5;
+        return Math.max(5, Math.min(99, base));
     },
     setTurn(who) {
         this.turn = who; const ind = $('turn-indicator'); const acts = $('combat-actions');
@@ -2460,11 +3174,13 @@ const combat = {
         this.playerDots = nextDots;
         if(totalDmg > 0) {
             this.takeDamage(totalDmg, 'player');
+            // HP barını güncelle
+            this.updateUI();
             // Aktif DOT tiplerine göre renkli vignette göster
             this.flashDotVignette({ hasPoison, hasBurn, hasBleed });
             this.showDmg(totalDmg, 'player', 'dot');
             this.logMessage(`Damage over time effects deal <span class="log-dmg">${totalDmg}</span> damage to you.`);
-            // DOT'tan ölme durumu: hemen yenilgi ekranını tetikle
+            // DOT'tan ölme durumu: HP barı sıfırlandığı anda death cross + gecikmeli defeat ekranı
             if(this.hp <= 0) {
                 game.handlePlayerDeath();
                 return true;
@@ -2507,14 +3223,15 @@ const combat = {
     },
     async playerAttack(type) {
         // Prevent spamming attack buttons while an action is in progress
-        if(this.turn !== 'player' || this.actionLock) return;
+        if (this.turn !== 'player' || this.actionLock) return;
+        // Lock immediately to avoid double-clicks scheduling multiple enemy turns
+        this.actionLock = true;
         // remove focus highlight from whichever button was clicked
-        const active = document.activeElement; if(active && typeof active.blur === 'function') active.blur();
+        const active = document.activeElement; if (active && typeof active.blur === 'function') active.blur();
         // visually dim and lock the action buttons until this action resolves
         const acts = $('combat-actions');
         acts.style.opacity = '0.8';
         acts.style.pointerEvents = 'none';
-        this.actionLock = true;
         const p = game.player; const e = this.enemy;
         if(type === 'heal') {
             const heal = Math.floor(this.maxHp * 0.4); this.hp = Math.min(this.maxHp, this.hp + heal);
@@ -2526,8 +3243,10 @@ const combat = {
         let mod = 1, bonus = 0, shake = 'shake-md';
         if(type==='quick'){ bonus=15; mod=0.7; shake='shake-sm'; }
         if(type==='power'){ bonus=-20; mod=1.5; shake='shake-lg'; }
+        // Etkin vuruş şansını [5,99] aralığında tut
+        const effectiveHit = Math.max(5, Math.min(99, hit + bonus));
 
-        if(rng(0,100) <= hit+bonus) {
+        if(rng(0,100) <= effectiveHit) {
             const range = p.getDmgRange();
             const baseDmg = rng(range.min, range.max);
             let dmg = Math.floor(baseDmg * mod);
@@ -2537,22 +3256,22 @@ const combat = {
             let isCrit = false;
             let isDisastrous = false;
 
-            if (rng(0,100) < critChance) {
-                isCrit = true;
-                let critDmg = Math.floor(dmg * 1.5); // normal crit
-
-                if (type === 'power') {
-                    // Oyuncu için Disastrous şansı (örnek: %6)
-                    const disastrousChancePlayer = 6;
-                    if (rng(0,100) < disastrousChancePlayer) {
-                        isDisastrous = true;
-                        // normal crit hasarının 4 katı
-                        dmg = Math.floor(critDmg * 4);
-                    } else {
-                        dmg = critDmg;
-                    }
-                } else {
-                    dmg = critDmg;
+            // Power Attack için: önce bağımsız disastrous şansı, olmazsa normal crit roll
+            if (type === 'power') {
+                const disastrousChancePlayer = 6; // %6 disastrous
+                if (rng(0,100) < disastrousChancePlayer) {
+                    isDisastrous = true;
+                    const critLike = Math.floor(dmg * 1.5); // önce crit benzeri artış
+                    dmg = Math.floor(critLike * 4);        // ardından 4x çarpan (toplam çok yüksek vurur)
+                } else if (rng(0,100) < critChance) {
+                    isCrit = true;
+                    dmg = Math.floor(dmg * 1.5);
+                }
+            } else {
+                // Quick / Normal: sadece normal crit şansı
+                if (rng(0,100) < critChance) {
+                    isCrit = true;
+                    dmg = Math.floor(dmg * 1.5);
                 }
             }
 
@@ -2569,13 +3288,26 @@ const combat = {
             this.logMessage(`Your attack misses ${e.name}.`);
         }
         this.updateUI();
-        if(e.hp <= 0) { await wait(1000); this.win(); this.actionLock = false; } else { await wait(800); this.setTurn('enemy'); this.actionLock = false; }
+        if(e.hp <= 0) {
+            // Enemy HP bar 0'a iner inmez X efekti ve ardından win sekansı
+            this.win();
+            this.actionLock = false;
+        } else {
+            await wait(800);
+            this.setTurn('enemy');
+            this.actionLock = false;
+        }
     },
     async runEnemyTurn() {
+        // Guard: enemy turn already in progress (can happen with rare double setTurn('enemy'))
+        if (this.enemyActing) return;
+        this.enemyActing = true;
+
         $('enemy-think').style.display = 'block'; await wait(1500); $('enemy-think').style.display = 'none';
         const p = game.player; const e = this.enemy;
         let hit = this.calcHit(e.atk, p.stats.def);
-        hit = Math.max(10, Math.min(99, hit - p.getDodgeBonus()));
+        // Dodge bonusu sonrası da alt sınırı %5'te tut
+        hit = Math.max(5, Math.min(99, hit - p.getDodgeBonus()));
         if(rng(0,100) <= hit) {
             const erange = this.getEnemyDmgRange(e);
             let dmg = rng(erange.min, erange.max);
@@ -2585,18 +3317,15 @@ const combat = {
             let isCrit = false;
             let isDisastrous = false;
 
-            if (rng(0,100) < critChanceEnemy) {
+            // Önce bağımsız disastrous şansı, olmazsa normal crit roll
+            const disastrousChanceEnemy = 3; // %3 disastrous
+            if (rng(0,100) < disastrousChanceEnemy) {
+                isDisastrous = true;
+                const critLike = Math.floor(dmg * 1.5);
+                dmg = Math.floor(critLike * 4);
+            } else if (rng(0,100) < critChanceEnemy) {
                 isCrit = true;
-                let critDmg = Math.floor(dmg * 1.5);
-
-                // Düşman için daha düşük Disastrous şansı (örnek: %3)
-                const disastrousChanceEnemy = 3;
-                if (rng(0,100) < disastrousChanceEnemy) {
-                    isDisastrous = true;
-                    dmg = Math.floor(critDmg * 4);
-                } else {
-                    dmg = critDmg;
-                }
+                dmg = Math.floor(dmg * 1.5);
             }
 
             this.takeDamage(dmg, 'player');
@@ -2625,14 +3354,28 @@ const combat = {
             this.logMessage(`${e.name}'s attack misses you.`);
         }
         this.updateUI();
-        if(this.hp <= 0) { await wait(1000); game.handlePlayerDeath(); }
-        else { await wait(500); this.setTurn('player'); }
+        if(this.hp <= 0) {
+            // HP barı sıfırlandığı anda death cross ve 1sn sonra defeat ekranı
+            game.handlePlayerDeath();
+        } else {
+            await wait(500);
+            this.setTurn('player');
+        }
+        this.enemyActing = false;
     },
     win() {
         const p = game.player; p.wins++; 
         // ensure enemy HP bar visibly drains to 0 before victory
         if (this.enemy && this.enemy.hp > 0) this.enemy.hp = 0;
+        // Önce HP/armor barlarını 0'a güncelle
         this.updateUI();
+        // Sonra enemy avatar üzerinde death cross efektini tetikle
+        const cross = $('enemy-death-cross');
+        if (cross) {
+            cross.classList.remove('enemy-death-cross-anim');
+            void cross.offsetWidth; // force reflow to restart animation
+            cross.classList.add('enemy-death-cross-anim');
+        }
         const baseGold = 20 + (this.enemy.lvl * 10); const baseXp = 50 + (this.enemy.lvl * 15);
         const chr = p.stats.chr || 0;
         let rewardMult = 1 + chr * 0.03; // each CHR = +3%
@@ -2654,17 +3397,22 @@ const combat = {
 
         const gold = Math.floor(baseGold * goldMult);
         const xp = Math.floor(baseXp * xpMult);
-        p.gold += gold; p.xp += xp;
-        $('modal-victory').classList.remove('hidden');
-        this.animateVal('vic-gold',0,gold,1000); this.animateVal('vic-xp',0,xp,1000);
-        // update XP labels around the bar
-        $('vic-xp-gain').innerText = xp;
-        $('vic-xp-text').innerText = `${p.xp}/${p.xpMax}`;
-        setTimeout(()=>{ const pct=Math.min(100,(p.xp/p.xpMax)*100); $('vic-xp-bar').style.width=pct+'%'; },100);
-        // Every victory counts as a fight for shop refresh logic
-        game.shopFightCount = (game.shopFightCount || 0) + 1;
-        game.updateShopRefreshIndicator();
-        game.saveGame();
+        // Victory ekranını X animasyonundan ~1sn sonra göster
+        setTimeout(() => {
+            p.gold += gold; p.xp += xp;
+            // Dövüş bittiğinde kullanılmayan potları envantere geri döndür
+            this.returnUnusedPotions();
+            $('modal-victory').classList.remove('hidden');
+            this.animateVal('vic-gold',0,gold,1000); this.animateVal('vic-xp',0,xp,1000);
+            // update XP labels around the bar
+            $('vic-xp-gain').innerText = xp;
+            $('vic-xp-text').innerText = `${p.xp}/${p.xpMax}`;
+            setTimeout(()=>{ const pct=Math.min(100,(p.xp/p.xpMax)*100); $('vic-xp-bar').style.width=pct+'%'; },100);
+            // Every victory counts as a fight for shop refresh logic
+            game.shopFightCount = (game.shopFightCount || 0) + 1;
+            game.updateShopRefreshIndicator();
+            game.saveGame();
+        }, 1000);
     },
     animateVal(id,s,e,d){ let obj=$(id),r=e-s,st=new Date().getTime(),et=st+d; let t=setInterval(()=>{ let n=new Date().getTime(),rem=Math.max((et-n)/d,0),v=Math.round(e-(rem*r)); obj.innerHTML=v; if(v==e)clearInterval(t); },20); },
     showDmg(val,t,type) {
@@ -2703,6 +3451,10 @@ const combat = {
 
 game.handlePlayerDeath = function() {
     if (!this.player) return;
+    // Aynı ölüm sekansında birden fazla tetiklenmesini engelle
+    if (this._deathInProgress) return;
+    this._deathInProgress = true;
+
     const before = this.player.gold || 0;
     const lost = Math.floor(before * 0.4);
     this.player.gold = Math.max(0, before - lost);
@@ -2710,17 +3462,35 @@ game.handlePlayerDeath = function() {
     const remEl = $('death-gold-remaining');
     if (lostEl) lostEl.innerText = lost;
     if (remEl) remEl.innerText = this.player.gold;
-    const m = $('modal-death');
-    if (m) m.classList.remove('hidden');
-    // Death also counts as a fight for shop refresh logic
-    this.shopFightCount = (this.shopFightCount || 0) + 1;
-    this.updateShopRefreshIndicator();
-    this.saveGame();
+
+    // Player avatar üzerindeki death cross animasyonunu tetikle
+    const cross = $('player-death-cross');
+    if (cross) {
+        cross.classList.remove('player-death-cross-anim');
+        void cross.offsetWidth;
+        cross.classList.add('player-death-cross-anim');
+    }
+
+    // Ölümde de kullanılmayan combat potlarını envantere iade et
+    if (window.combat && typeof combat.returnUnusedPotions === 'function') {
+        combat.returnUnusedPotions();
+    }
+
+    // Death ekranını X efektinden ~1sn sonra göster
+    setTimeout(() => {
+        const m = $('modal-death');
+        if (m) m.classList.remove('hidden');
+        // Death also counts as a fight for shop refresh logic
+        this.shopFightCount = (this.shopFightCount || 0) + 1;
+        this.updateShopRefreshIndicator();
+        this.saveGame();
+    }, 1000);
 };
 
 game.handleDeathContinue = function() {
     const m = $('modal-death');
     if (m) m.classList.add('hidden');
+    this._deathInProgress = false;
     this.showHub();
 };
 
