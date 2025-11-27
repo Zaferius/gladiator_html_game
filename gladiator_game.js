@@ -3355,7 +3355,7 @@ const combat = {
         }
         this.updateUI();
         if(this.hp <= 0) {
-            // HP barı sıfırlandığı anda death cross ve 1sn sonra defeat ekranı
+            // HP barı sıfırlandığı anda death cross ve bir süre sonra defeat ekranı
             game.handlePlayerDeath();
         } else {
             await wait(500);
@@ -3397,7 +3397,7 @@ const combat = {
 
         const gold = Math.floor(baseGold * goldMult);
         const xp = Math.floor(baseXp * xpMult);
-        // Victory ekranını X animasyonundan ~1sn sonra göster
+        // Victory ekranını X animasyonundan ~2.5sn sonra göster
         setTimeout(() => {
             p.gold += gold; p.xp += xp;
             // Dövüş bittiğinde kullanılmayan potları envantere geri döndür
@@ -3412,7 +3412,7 @@ const combat = {
             game.shopFightCount = (game.shopFightCount || 0) + 1;
             game.updateShopRefreshIndicator();
             game.saveGame();
-        }, 1000);
+        }, 2500);
     },
     animateVal(id,s,e,d){ let obj=$(id),r=e-s,st=new Date().getTime(),et=st+d; let t=setInterval(()=>{ let n=new Date().getTime(),rem=Math.max((et-n)/d,0),v=Math.round(e-(rem*r)); obj.innerHTML=v; if(v==e)clearInterval(t); },20); },
     showDmg(val,t,type) {
@@ -3476,7 +3476,7 @@ game.handlePlayerDeath = function() {
         combat.returnUnusedPotions();
     }
 
-    // Death ekranını X efektinden ~1sn sonra göster
+    // Death ekranını X efektinden ~2.5sn sonra göster
     setTimeout(() => {
         const m = $('modal-death');
         if (m) m.classList.remove('hidden');
