@@ -3225,10 +3225,7 @@ const combat = {
         const playerWrap = document.querySelector('.combat-avatar-player');
         const enemyWrap = document.querySelector('.combat-avatar-enemy');
         if (!playerWrap || !enemyWrap) {
-            // Fallback: animasyon yoksa doğrudan sonucu uygula
-            if (result && typeof result.apply === 'function') {
-                result.apply();
-            }
+            if (result && typeof result.apply === 'function') result.apply();
             return;
         }
         const origPlayerTransition = playerWrap.style.transition;
@@ -3252,27 +3249,25 @@ const combat = {
         enemyWrap.style.transform = `translate(${eOffsetX}px, ${eOffsetY}px)`;
         await wait(200);
 
-        // 2) X ekseninde merkeze doğru hızlanma ve çarpışma noktası
+        // 2) X ekseninde çarpışma: aradaki mesafeyi oranlara böl (attacker daha çok ilerler)
         const pRect2 = playerWrap.getBoundingClientRect();
         const eRect2 = enemyWrap.getBoundingClientRect();
         const pCenterX = pRect2.left + pRect2.width / 2;
         const eCenterX = eRect2.left + eRect2.width / 2;
-        const midX = (pCenterX + eCenterX) / 2;
-
-        // Merkezde sadece "buluşmak" yerine, biraz birbirlerinin tarafına doğru
-        // fazla gitmelerini sağla ki çarpışma hissi daha güçlü olsun.
-        const extraOverlap = 30; // X ekseninde fazladan ilerleme (px)
-        let targetPlayerX = midX;
-        let targetEnemyX = midX;
-
-        // Player ya da enemy saldırısı fark etmeksizin, çarpışma noktasını
-        // biraz enemy tarafına kaydır (sağ/sol yönler ekrandaki konuma göre).
-        targetPlayerX += extraOverlap;
-        targetEnemyX -= extraOverlap;
-
-        pOffsetX += targetPlayerX - pCenterX;
-        eOffsetX += targetEnemyX - eCenterX;
-
+        const distX = eCenterX - pCenterX;
+        const attackerFrac = 0.8;
+        const defenderFrac = 0.3;
+        let playerMoveX = 0;
+        let enemyMoveX = 0;
+        if (type === 'enemy') {
+            enemyMoveX = -attackerFrac * distX;
+            playerMoveX =  defenderFrac * distX;
+        } else {
+            playerMoveX =  attackerFrac * distX;
+            enemyMoveX = -defenderFrac * distX;
+        }
+        pOffsetX += playerMoveX;
+        eOffsetX += enemyMoveX;
         playerWrap.style.transform = `translate(${pOffsetX}px, ${pOffsetY}px)`;
         enemyWrap.style.transform = `translate(${eOffsetX}px, ${eOffsetY}px)`;
         await wait(120);
@@ -3282,21 +3277,78 @@ const combat = {
             result.apply();
         }
 
-        // 4) Avatarları eski pozisyonlarına geri kaydır – çarpışma anından hemen sonra
+        // 4) Avatarları eski pozisyonlarına geri kaydır
         playerWrap.style.transform = 'translate(0px, 0px)';
         enemyWrap.style.transform = 'translate(0px, 0px)';
+        await wait(150);
+        playerWrap.style.transition = origPlayerTransition;
+        enemyWrap.style.transition = origEnemyTransition;
+    },
+    async playDodgeAnimation(attacker, result) {
+        const playerWrap = document.querySelector('.combat-avatar-player');
+        const enemyWrap = document.querySelector('.combat-avatar-enemy');
+        if (!playerWrap || !enemyWrap) {
+            if (result && typeof result.apply === 'function') result.apply();
+            return;
+        }
+
+        const origPlayerTransition = playerWrap.style.transition;
+        const origEnemyTransition = enemyWrap.style.transition;
+        playerWrap.style.transition = 'transform 0.18s ease-out';
+        enemyWrap.style.transition = 'transform 0.18s ease-out';
+
+        const pRect = playerWrap.getBoundingClientRect();
+        const eRect = enemyWrap.getBoundingClientRect();
+        const pCenterY = pRect.top + pRect.height / 2;
+        const eCenterY = eRect.top + eRect.height / 2;
+        const midY = (pCenterY + eCenterY) / 2;
+        const pOffsetY = midY - pCenterY;
+        const eOffsetY = midY - eCenterY;
+
+        let pOffsetX = 0;
+        let eOffsetX = 0;
+
+        // 1) Y ekseninde hizalanma (hafif)
+        playerWrap.style.transform = `translate(${pOffsetX}px, ${pOffsetY}px)`;
+        enemyWrap.style.transform = `translate(${eOffsetX}px, ${eOffsetY}px)`;
         await wait(160);
+
+        // 2) Saldıran yine ileri doğru hamle yapsın, savunan sadece yukarı/aşağı kaçsın
+        const pCenterX = pRect.left + pRect.width / 2;
+        const eCenterX = eRect.left + eRect.width / 2;
+        const distX = eCenterX - pCenterX;
+        const attackerFrac = 0.7; // saldıran yine güçlü biçimde öne gelsin
+        const dodgeY = (Math.random() < 0.5 ? -1 : 1) * 22; // savunan için küçük yukarı/aşağı kaçış
+
+        if (attacker === 'enemy') {
+            // Enemy öne atılır, player sadece Y ekseninde kaçıyor gibi
+            eOffsetX -= attackerFrac * distX;
+            playerWrap.style.transform = `translate(${pOffsetX}px, ${pOffsetY + dodgeY}px)`;
+            enemyWrap.style.transform = `translate(${eOffsetX}px, ${eOffsetY}px)`;
+        } else {
+            // Player öne atılır, enemy sadece Y ekseninde kaçıyor gibi
+            pOffsetX += attackerFrac * distX;
+            playerWrap.style.transform = `translate(${pOffsetX}px, ${pOffsetY}px)`;
+            enemyWrap.style.transform = `translate(${eOffsetX}px, ${eOffsetY + dodgeY}px)`;
+        }
+
+        await wait(140);
+
+        if (result && typeof result.apply === 'function') {
+            result.apply();
+        }
+
+        // 3) Avatarları eski konumlarına döndür
+        playerWrap.style.transform = 'translate(0px, 0px)';
+        enemyWrap.style.transform = 'translate(0px, 0px)';
+        await wait(140);
         playerWrap.style.transition = origPlayerTransition;
         enemyWrap.style.transition = origEnemyTransition;
     },
     async playerAttack(type) {
-        // Prevent spamming attack buttons while an action is in progress
         if (this.turn !== 'player' || this.actionLock) return;
-        // Lock immediately to avoid double-clicks scheduling multiple enemy turns
         this.actionLock = true;
-        // remove focus highlight from whichever button was clicked
         const active = document.activeElement; if (active && typeof active.blur === 'function') active.blur();
-        // visually dim and lock the action buttons until this action resolves
         const acts = $('combat-actions');
         acts.style.opacity = '0.8';
         acts.style.pointerEvents = 'none';
@@ -3311,43 +3363,35 @@ const combat = {
         let mod = 1, bonus = 0, shake = 'shake-md';
         if(type==='quick'){ bonus=15; mod=0.7; shake='shake-sm'; }
         if(type==='power'){ bonus=-20; mod=1.5; shake='shake-lg'; }
-        // Etkin vuruş şansını [5,99] aralığında tut
         const effectiveHit = Math.max(5, Math.min(99, hit + bonus));
-
         const roll = rng(0,100);
         const didHit = roll <= effectiveHit;
 
-        let attackResult = {
+        const attackResult = {
             apply: () => {
                 if (didHit) {
                     const range = p.getDmgRange();
                     const baseDmg = rng(range.min, range.max);
                     let dmg = Math.floor(baseDmg * mod);
-
-                    // Kritik ve Disastrous Hit hesapla
                     const critChance = 5 + p.stats.atk + p.getCritBonus();
                     let isCrit = false;
                     let isDisastrous = false;
-
-                    // Power Attack için: önce bağımsız disastrous şansı, olmazsa normal crit roll
                     if (type === 'power') {
-                        const disastrousChancePlayer = 6; // %6 disastrous
+                        const disastrousChancePlayer = 6;
                         if (rng(0,100) < disastrousChancePlayer) {
                             isDisastrous = true;
-                            const critLike = Math.floor(dmg * 1.5); // önce crit benzeri artış
-                            dmg = Math.floor(critLike * 4);        // ardından 4x çarpan (toplam çok yüksek vurur)
+                            const critLike = Math.floor(dmg * 1.5);
+                            dmg = Math.floor(critLike * 4);
                         } else if (rng(0,100) < critChance) {
                             isCrit = true;
                             dmg = Math.floor(dmg * 1.5);
                         }
                     } else {
-                        // Quick / Normal: sadece normal crit şansı
                         if (rng(0,100) < critChance) {
                             isCrit = true;
                             dmg = Math.floor(dmg * 1.5);
                         }
                     }
-
                     this.takeDamage(dmg, 'enemy');
                     this.showDmg(dmg, 'enemy', isDisastrous ? 'disastrous' : (isCrit ? 'crit' : 'dmg'));
                     const label = type==='quick' ? 'Quick' : (type==='power' ? 'Power' : 'Normal');
@@ -3355,13 +3399,33 @@ const combat = {
                     if (isDisastrous) critText = ' (DISASTROUS HIT!)';
                     else if (isCrit) critText = ' (CRIT)';
                     this.logMessage(`You use ${label} Attack and hit ${e.name} for <span class="log-dmg">${dmg}</span>.${critText}`);
-                    const c=$('game-container'); c.classList.add(shake); setTimeout(()=>c.classList.remove(shake),500);
-                    // Enemy HP 0'a düştüğü anda death cross ikonunu hemen göster
+                    const c = $('game-container');
+                    const pWrap = document.querySelector('.combat-avatar-player');
+                    const eWrap = document.querySelector('.combat-avatar-enemy');
+                    if (c && pWrap && eWrap) {
+                        const pRect = pWrap.getBoundingClientRect();
+                        const eRect = eWrap.getBoundingClientRect();
+                        const pCenterX = pRect.left + pRect.width / 2;
+                        const pCenterY = pRect.top + pRect.height / 2;
+                        const eCenterX = eRect.left + eRect.width / 2;
+                        const eCenterY = eRect.top + eRect.height / 2;
+                        const impactX = (pCenterX + eCenterX) / 2;
+                        const impactY = (pCenterY + eCenterY) / 2;
+                        const contRect = c.getBoundingClientRect();
+                        c.style.setProperty('--impact-x', `${impactX - contRect.left}px`);
+                        c.style.setProperty('--impact-y', `${impactY - contRect.top}px`);
+                        c.classList.add(shake);
+                        c.classList.add('hit-impact');
+                        setTimeout(()=>{
+                            c.classList.remove(shake);
+                            c.classList.remove('hit-impact');
+                        },500);
+                    }
                     if (e.hp <= 0) {
                         const cross = $('enemy-death-cross');
                         if (cross) {
                             cross.classList.remove('enemy-death-cross-anim');
-                            void cross.offsetWidth; // reflow
+                            void cross.offsetWidth;
                             cross.classList.add('enemy-death-cross-anim');
                         }
                     }
@@ -3373,10 +3437,13 @@ const combat = {
             }
         };
 
-        await this.playCollisionAnimation(type, attackResult);
+        if (didHit) {
+            await this.playCollisionAnimation(type, attackResult);
+        } else {
+            await this.playDodgeAnimation('player', attackResult);
+        }
 
         if(e.hp <= 0) {
-            // Enemy HP bar 0'a iner inmez X efekti ve ardından win sekansı
             this.win();
             this.actionLock = false;
         } else {
@@ -3386,31 +3453,24 @@ const combat = {
         }
     },
     async runEnemyTurn() {
-        // Guard: enemy turn already in progress (can happen with rare double setTurn('enemy'))
         if (this.enemyActing) return;
         this.enemyActing = true;
-
         $('enemy-think').style.display = 'block'; await wait(1500); $('enemy-think').style.display = 'none';
         const p = game.player; const e = this.enemy;
         let hit = this.calcHit(e.atk, p.stats.def);
-        // Dodge bonusu sonrası da alt sınırı %5'te tut
         hit = Math.max(5, Math.min(99, hit - p.getDodgeBonus()));
         const roll = rng(0,100);
         const didHit = roll <= hit;
 
-        let attackResult = {
+        const attackResult = {
             apply: () => {
                 if (didHit) {
                     const erange = this.getEnemyDmgRange(e);
                     let dmg = rng(erange.min, erange.max);
-
-                    // Düşman kritik ve Disastrous Hit
                     const critChanceEnemy = 5 + e.atk;
                     let isCrit = false;
                     let isDisastrous = false;
-
-                    // Önce bağımsız disastrous şansı, olmazsa normal crit roll
-                    const disastrousChanceEnemy = 3; // %3 disastrous
+                    const disastrousChanceEnemy = 3;
                     if (rng(0,100) < disastrousChanceEnemy) {
                         isDisastrous = true;
                         const critLike = Math.floor(dmg * 1.5);
@@ -3419,29 +3479,34 @@ const combat = {
                         isCrit = true;
                         dmg = Math.floor(dmg * 1.5);
                     }
-
                     this.takeDamage(dmg, 'player');
                     this.showDmg(dmg, 'player', isDisastrous ? 'disastrous' : (isCrit ? 'crit' : 'dmg'));
-
                     let extra = '';
                     if (isDisastrous) extra = ' (DISASTROUS HIT!)';
                     else if (isCrit) extra = ' (CRIT)';
-
                     this.logMessage(`${e.name} hits you for <span class="log-dmg">${dmg}</span>.${extra}`);
-                    // chance to apply DOTs based on enemy type, reduced by per-effect resistance
-                    if(typeof STATUS_EFFECTS_CONFIG !== 'undefined') {
-                        const defs = STATUS_EFFECTS_CONFIG.enemies[e.name];
-                        if(defs && Array.isArray(defs)) {
-                            defs.forEach(def => {
-                                const baseChance = def.chance || 0;
-                                const resist = this.dotResist && this.dotResist[def.effect] ? this.dotResist[def.effect] : 0;
-                                const effectiveChance = baseChance * (1 - resist);
-                                if(Math.random() <= effectiveChance) this.applyDot(def.effect);
-                            });
-                        }
+                    const c = $('game-container');
+                    const pWrap = document.querySelector('.combat-avatar-player');
+                    const eWrap = document.querySelector('.combat-avatar-enemy');
+                    if (c && pWrap && eWrap) {
+                        const pRect = pWrap.getBoundingClientRect();
+                        const eRect = eWrap.getBoundingClientRect();
+                        const pCenterX = pRect.left + pRect.width / 2;
+                        const pCenterY = pRect.top + pRect.height / 2;
+                        const eCenterX = eRect.left + eRect.width / 2;
+                        const eCenterY = eRect.top + eRect.height / 2;
+                        const impactX = (pCenterX + eCenterX) / 2;
+                        const impactY = (pCenterY + eCenterY) / 2;
+                        const contRect = c.getBoundingClientRect();
+                        c.style.setProperty('--impact-x', `${impactX - contRect.left}px`);
+                        c.style.setProperty('--impact-y', `${impactY - contRect.top}px`);
+                        c.classList.add('shake-sm');
+                        c.classList.add('hit-impact');
+                        setTimeout(()=>{
+                            c.classList.remove('shake-sm');
+                            c.classList.remove('hit-impact');
+                        },400);
                     }
-                    const c=$('game-container'); c.classList.add('shake-sm'); setTimeout(()=>c.classList.remove('shake-sm'),300);
-                    // Player HP 0'a düştüğü anda ölüm sekansını hemen başlat
                     if (this.hp <= 0 && typeof game.handlePlayerDeath === 'function') {
                         game.handlePlayerDeath();
                     }
@@ -3453,9 +3518,12 @@ const combat = {
             }
         };
 
-        await this.playCollisionAnimation('enemy', attackResult);
+        if (didHit) {
+            await this.playCollisionAnimation('enemy', attackResult);
+        } else {
+            await this.playDodgeAnimation('enemy', attackResult);
+        }
 
-        // Ölmediyse sıradaki turu oyuncuya ver
         if(this.hp > 0) {
             await wait(500);
             this.setTurn('player');
